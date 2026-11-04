@@ -125,6 +125,9 @@
   .wc-holder { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 2px; }
   .wc-name { font: 800 22px "Bricolage Grotesque", system-ui, sans-serif; letter-spacing: .04em; text-transform: uppercase; text-shadow: 0 1px 2px rgba(0,0,0,.15); }
   .wc-holder .wc-addr { font-size: 13px; opacity: .85; }
+  .linkbtn { display: block; width: 100%; margin-top: 14px; background: none; border: 0; color: var(--rose-deep); font: 600 15px "Plus Jakarta Sans", system-ui, sans-serif; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+  .field { width: 100%; margin: 6px 0 14px; padding: 14px; border-radius: 14px; border: 2px solid var(--line); font: 500 15px ui-monospace, Consolas, monospace; color: var(--ink); background: #fff; }
+  .field:focus { outline: none; border-color: var(--rose); }
   .balancebox { margin: 0 0 14px; padding: 16px; border-radius: 20px; background: #fff; border: 1px solid var(--line); box-shadow: 0 6px 16px -12px rgba(42, 20, 28, .15); }
   .bb-note { font-size: 13px; margin: 8px 0 12px; }
   .topups { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -210,6 +213,28 @@
     <p class="muted" id="sub">Set up your own Kolo wallet. It takes about 20 seconds.</p>
     <div class="chips"><span class="chip">No password</span><span class="chip">No seed phrase</span><span class="chip">Free to set up</span></div>
     <button class="btn" id="start">Get started</button>
+    <button class="linkbtn" id="open-mine">Already have a Kolo wallet? Open it with your fingerprint</button>
+  </section>
+
+  <!-- My wallet: sign in with the passkey, see the balance, send it anywhere -->
+  <section class="screen card" id="s-mine">
+    <h1>My wallet</h1>
+    <p class="muted" id="mine-sub">Signed in with your fingerprint. This works even if you leave Kolo.</p>
+    <div class="wallet-card">
+      <div class="wc-row"><span class="wc-brand">🐷 Kolo</span><span class="wc-chip"></span></div>
+      <div class="wc-holder">
+        <div class="wc-name">Your wallet</div>
+        <div class="wc-addr" id="mine-addr">0x0000…0000</div>
+      </div>
+      <div class="wc-row">
+        <div><div class="wc-label">In this wallet</div><div class="wc-limit" id="mine-bal">₦0</div></div>
+        <div style="text-align:right"><div class="wc-label">Controlled by</div><div>Only you</div></div>
+      </div>
+    </div>
+    <label class="sb-label" for="send-to">Send everything to this wallet address</label>
+    <input id="send-to" class="field" placeholder="0x…" autocomplete="off" spellcheck="false">
+    <button class="btn" id="send-all"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>Send with fingerprint</button>
+    <div class="status" id="mine-status" hidden></div>
   </section>
 
   <!-- 2. Daily limit + create -->
@@ -275,6 +300,7 @@
         <div class="sb-foot muted" id="meter-text">₦0 of ₦10,000 used</div>
       </div>
       <button class="btn" id="back">Back to Kolo on WhatsApp</button>
+      <button class="linkbtn" id="manage">Manage my wallet</button>
     </div>
 
     <details id="demo">
@@ -308,10 +334,10 @@
     return json
   }
 
-  const order = ['s-welcome', 's-limit', 's-secure', 's-done']
+  const order = ['s-welcome', 's-limit', 's-secure', 's-done', 's-mine']
   function show(id) {
     for (const s of order) $(s).classList.toggle('on', s === id)
-    const step = Math.min(order.indexOf(id), 2)
+    const step = id === 's-mine' ? 2 : Math.min(order.indexOf(id), 2)
     document.querySelectorAll('.steps i').forEach((dot, i) => dot.classList.toggle('on', i <= step))
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -477,6 +503,62 @@
   card.addEventListener('pointerleave', () => { card.style.setProperty('--rx', '8deg'); card.style.setProperty('--ry', '0deg') })
 
   $('back').onclick = () => { location.href = koloChat }
+
+  // ── My wallet: the owner's way in, with or without a Kolo account ──
+  let mine // { credentialId, address, publicKey }
+  const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+
+  async function openMine(credentialId) {
+    const me = await api('/api/me', { credentialId })
+    mine = { credentialId, address: me.address, publicKey: me.publicKey }
+    $('mine-addr').textContent = `${me.address.slice(0, 6)}…${me.address.slice(-4)}`
+    $('mine-bal').textContent = naira(me.balance)
+    $('mine-sub').textContent = me.linkedToKolo
+      ? 'Signed in with your fingerprint. Only you can move what is in here.'
+      : 'Your Kolo account is closed, but this wallet is still yours. Send what is in it anywhere you like.'
+    show('s-mine')
+  }
+
+  // Ask the device which Kolo passkey it has: no list is sent, the person picks theirs.
+  $('open-mine').onclick = once(async () => {
+    try {
+      const cred = await navigator.credentials.get({ publicKey: { challenge: crypto.getRandomValues(new Uint8Array(32)), rpId: location.hostname, userVerification: 'required', allowCredentials: [] } })
+      await openMine(b64url(cred.rawId))
+    } catch (e) {
+      show('s-mine')
+      status($('mine-status'), e.name === 'NotAllowedError' ? 'Cancelled. Tap "Open my wallet" again when ready.' : e.message, 'bad')
+    }
+  })
+
+  $('manage').onclick = once(async () => {
+    try { await openMine(credential.id) } catch (e) { alertLine(e) }
+  })
+  const alertLine = (e) => status($('approve-status'), e.message, 'bad')
+
+  $('send-all').onclick = once(async () => {
+    const to = $('send-to').value.trim()
+    if (!/^0x[0-9a-fA-F]{40}$/.test(to)) { status($('mine-status'), 'Paste a full wallet address (0x followed by 40 characters).', 'bad'); return }
+    try {
+      status($('mine-status'), 'Preparing the transfer…', 'busy')
+      const op = await api('/api/withdraw/prepare', { credentialId: mine.credentialId, to })
+      status($('mine-status'), 'Confirm with your fingerprint or face…', 'busy')
+      const client = createPublicClient({ chain: { id: 84532, name: 'Base Sepolia', nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, rpcUrls: { default: { http: ['/rpc'] } } }, transport: http(location.origin + '/rpc') })
+      const owner = toWebAuthnAccount({ credential: { id: mine.credentialId, publicKey: mine.publicKey } })
+      const account = await toCoinbaseSmartAccount({ client, owners: [owner, '0xf85210B21cC50302F477BA56686d2019dC9b67Ad'], address: mine.address })
+      const big = (k) => BigInt(op[k])
+      const signature = await account.signUserOperation({
+        ...op, nonce: big('nonce'), callGasLimit: big('callGasLimit'), verificationGasLimit: big('verificationGasLimit'),
+        preVerificationGas: big('preVerificationGas'), maxFeePerGas: big('maxFeePerGas'), maxPriorityFeePerGas: big('maxPriorityFeePerGas'), chainId: 84532,
+      })
+      status($('mine-status'), 'Sending…', 'busy')
+      const r = await api('/api/withdraw/submit', { credentialId: mine.credentialId, op: { ...op, signature } })
+      $('mine-bal').textContent = naira(r.balance)
+      status($('mine-status'), 'Sent. Only your fingerprint could approve that, not Kolo.', 'ok')
+      proof('Withdrawal', r.tx)
+    } catch (e) {
+      status($('mine-status'), e.name === 'NotAllowedError' ? 'Cancelled. Nothing was sent.' : `Couldn't send: ${e.message}`, 'bad')
+    }
+  })
 
   $('pay').onclick = once(async () => {
     const line = (text, bad) => $('pay-log').prepend(Object.assign(document.createElement('div'), { textContent: text, className: bad ? 'bad' : '' }))

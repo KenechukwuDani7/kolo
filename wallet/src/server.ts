@@ -3,7 +3,8 @@
 // deploys the wallet, and spends within the permission the user signed.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage } from 'node:http'
-import { type Address, type Hex } from 'viem'
+import { formatEther, isAddress, type Address, type Hex } from 'viem'
+import { balanceOf, prepareWithdraw, submitWithdraw } from './withdraw.js'
 import { toCoinbaseSmartAccount, toWebAuthnAccount } from 'viem/account-abstraction'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import {
@@ -44,7 +45,10 @@ const BOT_URL = process.env.KOLO_BOT_URL ?? 'http://localhost:3117'
 // Every wallet made here, by address, so anyone can check their limit later
 // (the page, and /limit in WhatsApp). Saved to data/wallets.json.
 const WALLETS_FILE = 'data/wallets.json'
-const wallets = new Map<string, { permission: SpendPermission; limitNaira: number }>(
+// credentialId + publicKey let the owner sign in with their passkey later, Kolo account or not.
+// revoked: Kolo gave up its spend permission (account deleted); the wallet is still the owner's.
+type WalletRecord = { permission: SpendPermission; limitNaira: number; credentialId?: string; publicKey?: Hex; revoked?: boolean }
+const wallets = new Map<string, WalletRecord>(
   existsSync(WALLETS_FILE)
     ? JSON.parse(readFileSync(WALLETS_FILE, 'utf8')).map(([address, w]: [string, any]) => [
         address,
@@ -55,6 +59,12 @@ const wallets = new Map<string, { permission: SpendPermission; limitNaira: numbe
 function saveWallets() {
   mkdirSync('data', { recursive: true })
   writeFileSync(WALLETS_FILE, toJson([...wallets]))
+}
+
+function byCredential(credentialId: string): [string, WalletRecord] {
+  const found = [...wallets].find(([, w]) => w.credentialId && w.credentialId === credentialId)
+  if (!found || !found[1].publicKey) throw new Error('no Kolo wallet for this passkey on this device')
+  return found
 }
 
 // How much of today's limit is spent, what's left, and when the day resets (on-chain truth).
@@ -135,7 +145,7 @@ const routes: Record<string, (body: any) => Promise<unknown>> = {
     const deploy = await send({ to: factory!, data: factoryData! })
     const fund = await send({ to: wallet.address, value: WALLET_FUNDING })
     permission = newPermission(wallet.address, nairaToWei(limitNaira))
-    wallets.set(wallet.address.toLowerCase(), { permission, limitNaira })
+    wallets.set(wallet.address.toLowerCase(), { permission, limitNaira, credentialId: id, publicKey })
     saveWallets()
     return {
       address: wallet.address,
@@ -166,6 +176,34 @@ const routes: Record<string, (body: any) => Promise<unknown>> = {
     const json = await res.json()
     if (!res.ok) throw new Error(json.error)
     return json
+  },
+
+  // ── The owner's own wallet, signed in with their passkey (works after leaving Kolo) ──
+
+  async '/api/me'({ credentialId }: { credentialId: string }) {
+    const [address, w] = byCredential(credentialId)
+    const balance = await balanceOf(address as Address)
+    return { address, publicKey: w.publicKey, balance: weiToNaira(balance), balanceEth: formatEther(balance), linkedToKolo: !w.revoked }
+  },
+
+  async '/api/withdraw/prepare'({ credentialId, to }: { credentialId: string; to: string }) {
+    if (!isAddress(to)) throw new Error('that is not a valid wallet address')
+    const [address, w] = byCredential(credentialId)
+    const value = await balanceOf(address as Address)
+    if (value === 0n) throw new Error('this wallet is empty')
+    return prepareWithdraw({ id: credentialId, publicKey: w.publicKey! }, address as Address, to as Address, value)
+  },
+
+  async '/api/withdraw/submit'({ credentialId, op }: { credentialId: string; op: Record<string, string> }) {
+    const [address] = byCredential(credentialId)
+    if (String(op.sender).toLowerCase() !== address) throw new Error('that operation is for another wallet')
+    const big = (k: string) => BigInt(op[k])
+    const { hash } = await submitWithdraw({
+      sender: op.sender as Address, nonce: big('nonce'), initCode: op.initCode as Hex, callData: op.callData as Hex,
+      callGasLimit: big('callGasLimit'), verificationGasLimit: big('verificationGasLimit'), preVerificationGas: big('preVerificationGas'),
+      maxFeePerGas: big('maxFeePerGas'), maxPriorityFeePerGas: big('maxPriorityFeePerGas'), paymasterAndData: op.paymasterAndData as Hex, signature: op.signature as Hex,
+    })
+    return { tx: link(hash), balance: weiToNaira(await balanceOf(address as Address)) }
   },
 
   '/api/usage'({ address }: { address?: string }) {
@@ -205,7 +243,7 @@ createServer(async (req, res) => {
         return
       }
       const tx = await revokeAsSpender(w.permission)
-      wallets.delete(String(address).toLowerCase())
+      wallets.set(String(address).toLowerCase(), { ...w, revoked: true })
       saveWallets()
       res.writeHead(200, { 'content-type': 'application/json' }).end(toJson({ revoked: link(tx.hash) }))
     } catch (error: any) {
