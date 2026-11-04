@@ -38,6 +38,13 @@ export type Payments = {
   // Pays a member out of the group pot, or to `address` (their own wallet) on cash-out;
   // `sent` describes what actually moved ("3.63 USDT on BSC").
   payout(opts: { chatId: string; member: Member; amount: number; purpose: string; address?: string }): Promise<{ reference: string; sent: string }>
+  // The group's own account under Kolo's Roqqu parent account, so groups' money is never one pool.
+  groupAccount(opts: { chatId: string; name: string }): Promise<string>
+}
+
+// Reads a member's passkey wallet: how much of today's limit is spent and left (on-chain).
+export type WalletInfo = {
+  usage(address: string): Promise<{ used: number; limit: number; left: number; resetsAt: number }>
 }
 
 // A spend from the pot waiting on the group's vote.
@@ -89,6 +96,8 @@ export class Kolo {
   // /join links: one-time token → who asked, and each member's own passkey wallet address.
   private joinTokens = new Map<string, { chatId: string; memberId: string; name: string }>()
   private wallets = new Map<string, string>()
+  // Each group's own Roqqu account address.
+  private groupAccounts = new Map<string, string>()
 
   // Everything Kolo must remember across restarts, as plain JSON.
   snapshot() {
@@ -99,6 +108,7 @@ export class Kolo {
       balances: [...this.balances],
       joinTokens: [...this.joinTokens],
       wallets: [...this.wallets],
+      groupAccounts: [...this.groupAccounts],
     }
   }
 
@@ -109,6 +119,7 @@ export class Kolo {
     this.balances = new Map(s.balances ?? [])
     this.joinTokens = new Map(s.joinTokens ?? [])
     this.wallets = new Map(s.wallets ?? [])
+    this.groupAccounts = new Map(s.groupAccounts ?? [])
   }
 
   // Who a /join link is for, so the wallet page can greet them by name.
@@ -139,6 +150,23 @@ export class Kolo {
   balanceOf = (memberId: string) => this.balances.get(memberId) ?? DEMO_CREDIT
 
   // Groups this member belongs to (any group that has run a collection with them in it).
+  // "🏦 Group pot: ₦6,000 · own account 0xab…cd"
+  potText(chatId: string) {
+    const account = this.groupAccounts.get(chatId)
+    return `🏦 Group pot: ${naira(this.pot(chatId))}${account ? ` · own account ${account.slice(0, 6)}…${account.slice(-4)}` : ''}`
+  }
+
+  // Money sent straight to a group's own account (not through a pay link) goes into its pot.
+  depositToGroup(address: string, amount: number, hash: string): Action[] {
+    const chatId = [...this.groupAccounts].find(([, a]) => a.toLowerCase() === address.toLowerCase())?.[0]
+    if (!chatId) return []
+    this.credit(chatId, amount)
+    const text = `💰 ${naira(amount)} landed in the group's own account.\n${this.potText(chatId)}\nTx: ${hash.slice(0, 12)}…`
+    return [{ type: 'text' as const, chatId, text }].map(sign)
+  }
+
+  groupAccountOf = (chatId: string) => this.groupAccounts.get(chatId)
+
   groupsOf = (memberId: string) => [...this.collections].filter(([, c]) => c.members.some((m) => m.id === memberId)).map(([chatId]) => chatId)
 
   // Collections this member still owes, across every group.
@@ -166,6 +194,7 @@ export class Kolo {
   constructor(
     private read?: Reader,
     private payments?: Payments,
+    private walletInfo?: WalletInfo,
   ) {}
 
   // The payment provider confirmed a pay link was paid: tick that member off.
@@ -239,9 +268,11 @@ export class Kolo {
         // "/spend 5k @Excel projector"
         return this.startSpend(msg, parseAmount(args[0] ?? ''), msg.mentions, args.slice(1).filter((w) => !w.startsWith('@')).join(' '))
       case 'pot':
-        return [this.text(msg, potLine(this.pot(msg.chatId)))]
+        return [this.text(msg, this.potText(msg.chatId))]
       case 'cashout':
         return this.cashout(msg, parseAmount(args[0] ?? ''))
+      case 'limit':
+        return this.limit(msg)
       case '':
       case 'help': {
         const topic = featureFor(args.join(' '))
@@ -278,6 +309,8 @@ export class Kolo {
         return this.join(msg)
       case 'cashout':
         return this.cashout(msg, intent.amount ?? undefined)
+      case 'limit':
+        return this.limit(msg)
       case 'help':
         // Explanations come from FEATURES, never from the AI, so they are always accurate.
         return [this.text(msg, intent.topic ? explain(intent.topic) : HELP)]
@@ -320,6 +353,16 @@ export class Kolo {
       return [this.duesCard(msg.chatId, collection, `New collection: ${collection.title}\n${naira(amount)} each · reply "paid" when done\n(Test mode: "paid" is trusted.)`)]
     }
 
+    // The group's own account under Kolo's Roqqu parent account (made once).
+    if (!this.groupAccounts.has(msg.chatId)) {
+      try {
+        this.groupAccounts.set(msg.chatId, await this.payments.groupAccount({ chatId: msg.chatId, name: collection.title }))
+      } catch (error) {
+        console.error('group account failed:', error)
+      }
+    }
+    const account = this.groupAccounts.get(msg.chatId)
+
     // One personal pay link per member, so each payment says exactly who paid.
     const made = await Promise.allSettled(
       members.map(async (member) => {
@@ -337,6 +380,8 @@ export class Kolo {
         msg.chatId,
         collection,
         `New collection: ${collection.title}\n${naira(amount)} each\n📩 I've sent each person a pay link. Pay with USDT or BTC through Roqqu, and I'll tick you here automatically.${
+          account ? `\n🏦 This group's money sits in its own account (${account.slice(0, 6)}…${account.slice(-4)}), never in one shared pool.` : ''
+        }${
           missing.length ? `\n⚠️ Couldn't make a link for ${missing.map((m) => m.name).join(', ')}. Try /status later.` : ''
         }`,
       ),
@@ -396,7 +441,7 @@ export class Kolo {
     return [
       this.text(
         msg,
-        `📊 *${c.title}* · ${naira(c.amount)} each\n${c.paid.size}/${c.members.length} paid · ${naira(c.paid.size * c.amount)} collected\n✅ ${paid.join(', ') || 'nobody yet'}\n⏳ ${unpaid.map((m) => m.name).join(', ') || 'nobody'}\n${potLine(this.pot(msg.chatId))}`,
+        `📊 *${c.title}* · ${naira(c.amount)} each\n${c.paid.size}/${c.members.length} paid · ${naira(c.paid.size * c.amount)} collected\n✅ ${paid.join(', ') || 'nobody yet'}\n⏳ ${unpaid.map((m) => m.name).join(', ') || 'nobody'}\n${this.potText(msg.chatId)}`,
       ),
     ]
   }
@@ -453,6 +498,27 @@ export class Kolo {
       },
       this.text(msg, `📩 ${msg.sender.name}, I've sent you a private link.`),
     ]
+  }
+
+  // "How much can Kolo still spend for me today?", read from the wallet's on-chain limit.
+  private async limit(msg: Incoming): Promise<Action[]> {
+    const address = this.wallets.get(msg.sender.id)
+    if (!address) return [this.text(msg, `You don't have a Kolo wallet yet. Set one up with /join and pick your daily limit.`)]
+    if (!this.walletInfo) return [this.text(msg, "I can't reach the wallet service right now. Try again soon.")]
+    try {
+      const u = await this.walletInfo.usage(address)
+      const hours = Math.max(0, Math.round((u.resetsAt - Date.now()) / 3_600_000))
+      const filled = Math.min(10, Math.round((u.used / u.limit) * 10))
+      return [
+        this.text(
+          msg,
+          `🔐 ${msg.sender.name}'s daily limit\nSpent today: ${naira(u.used)}\nLeft to spend: *${naira(u.left)}* of ${naira(u.limit)}\n${'🟥'.repeat(filled)}${'⬜'.repeat(10 - filled)}\nResets in about ${hours}h. Anything above it needs your fingerprint.`,
+        ),
+      ]
+    } catch (error) {
+      console.error('limit lookup failed:', error)
+      return [this.text(msg, "I couldn't read your wallet just now. Try again soon.")]
+    }
   }
 
   // Move money from your Kolo balance to your own passkey wallet, through Roqqu.
@@ -518,13 +584,13 @@ export class Kolo {
     if (spend.amount > pot) return say(`✅ Approved, but the pot now has only ${naira(pot)}. Nothing was sent.`)
     if (!this.payments) {
       this.pots.set(poll.chatId, pot - spend.amount)
-      return say(`✅ Approved ${yes}/${poll.needed}. ${naira(spend.amount)} paid to ${spend.to.name} for ${spend.purpose} (test mode, no money moved).\n${potLine(this.pot(poll.chatId))}`)
+      return say(`✅ Approved ${yes}/${poll.needed}. ${naira(spend.amount)} paid to ${spend.to.name} for ${spend.purpose} (test mode, no money moved).\n${this.potText(poll.chatId)}`)
     }
     try {
       const { reference, sent } = await this.payments.payout({ chatId: poll.chatId, member: spend.to, amount: spend.amount, purpose: spend.purpose })
       this.pots.set(poll.chatId, pot - spend.amount)
       return say(
-        `✅ Approved ${yes}/${poll.needed}. Paid!\n🧾 *Receipt*\n${naira(spend.amount)} (${sent}) → ${spend.to.name}\nFor: ${spend.purpose}\nAsked by: ${spend.by.name}\nRoqqu ref: ${reference}\n${potLine(this.pot(poll.chatId))}`,
+        `✅ Approved ${yes}/${poll.needed}. Paid!\n🧾 *Receipt*\n${naira(spend.amount)} (${sent}) → ${spend.to.name}\nFor: ${spend.purpose}\nAsked by: ${spend.by.name}\nRoqqu ref: ${reference}\n${this.potText(poll.chatId)}`,
       )
     } catch (error) {
       console.error('payout failed:', error)
@@ -639,6 +705,13 @@ export const FEATURES = {
     say: '/join',
     short: 'Get your private link to set up your own Kolo wallet with your fingerprint or face.',
     long: 'Sets up your own Kolo wallet. It is protected by your phone\'s fingerprint or face unlock, and nobody else, not even Kolo, can spend more than the limit you choose.',
+  },
+  limit: {
+    icon: '📉',
+    name: 'Your daily limit',
+    say: '/limit',
+    short: 'See how much of your daily limit is spent and how much is left.',
+    long: 'Shows how much Kolo has spent from your own wallet today, how much of your daily limit is left, and when it resets. The limit lives on the blockchain, so even Kolo cannot go over it.',
   },
   cashout: {
     icon: '💸',

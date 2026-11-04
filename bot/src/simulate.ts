@@ -14,9 +14,10 @@ const payments: Payments | undefined = usePay
   ? {
       link: async ({ member }) => ({ reference: `SIM${member.id.toUpperCase()}`, url: `https://checkout-sandbox.roqqu.io/?refId=sim-${member.id}` }),
       payout: async ({ amount }) => ({ reference: 'SIMPAYOUT1', sent: `${(amount / 1375).toFixed(2)} USDT on BSC` }),
+      groupAccount: async () => '0xab12000000000000000000000000000000cd34',
     }
   : undefined
-const kolo = new Kolo(reader, payments)
+const kolo = new Kolo(reader, payments, { usage: async () => ({ used: 4000, limit: 10000, left: 6000, resetsAt: Date.now() + 9 * 3_600_000 }) })
 const group = 'class-group'
 const people = { chinedu: 'Chinedu', ada: 'Ada', chidi: 'Chidi', tobe: 'Tobe' } as const
 type Person = keyof typeof people
@@ -102,6 +103,10 @@ if (usePay) {
   show(kolo.walletReady(token, '0x1234567890abcdef1234567890abcdef12345678', '0.001 ETH')) // a used link does nothing
   await say('tobe', '/cashout 3k')
   await say('tobe', '/cashout 50k') // more than his balance
+  await say('tobe', '/limit')
+  await say('ada', '/limit') // no wallet yet
+  console.log('\n[someone sends 5 USDT straight to the group account]')
+  show(kolo.depositToGroup('0xAB12000000000000000000000000000000CD34', 6875, '0xfeedbeefcafe0001'))
 } else {
   await say('ada', 'paid')
   await say('chidi', 'paid')

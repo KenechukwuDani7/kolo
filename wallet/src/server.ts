@@ -1,7 +1,7 @@
 // Tiny Kolo backend for trying the wallet flow with a REAL passkey in the browser
 // (Windows Hello, Touch ID, or a phone). It plays the bot's role: pays gas,
 // deploys the wallet, and spends within the permission the user signed.
-import { readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage } from 'node:http'
 import { type Address, type Hex } from 'viem'
 import { toCoinbaseSmartAccount, toWebAuthnAccount } from 'viem/account-abstraction'
@@ -39,6 +39,31 @@ let limitNaira = 10_000
 const DEMO_PAYMENT_NAIRA = 4_000
 const LIMIT_CHOICES = [5_000, 10_000, 20_000]
 const BOT_URL = process.env.KOLO_BOT_URL ?? 'http://localhost:3117'
+
+// Every wallet made here, by address, so anyone can check their limit later
+// (the page, and /limit in WhatsApp). Saved to data/wallets.json.
+const WALLETS_FILE = 'data/wallets.json'
+const wallets = new Map<string, { permission: SpendPermission; limitNaira: number }>(
+  existsSync(WALLETS_FILE)
+    ? JSON.parse(readFileSync(WALLETS_FILE, 'utf8')).map(([address, w]: [string, any]) => [
+        address,
+        { ...w, permission: { ...w.permission, allowance: BigInt(w.permission.allowance), salt: BigInt(w.permission.salt) } },
+      ])
+    : [],
+)
+function saveWallets() {
+  mkdirSync('data', { recursive: true })
+  writeFileSync(WALLETS_FILE, toJson([...wallets]))
+}
+
+// How much of today's limit is spent, what's left, and when the day resets (on-chain truth).
+async function usage(address?: string) {
+  const w = address ? wallets.get(address.toLowerCase()) : permission && wallets.get(permission.account.toLowerCase())
+  if (!w) throw new Error('no Kolo wallet with that address')
+  const period = await publicClient.readContract({ address: SPEND_PERMISSION_MANAGER, abi: managerAbi, functionName: 'getCurrentPeriod', args: [w.permission] })
+  const used = weiToNaira(period.spend)
+  return { used, limit: w.limitNaira, left: Math.max(0, w.limitNaira - used), resetsAt: Number(period.end) * 1000 }
+}
 
 // Tell the WhatsApp bot the wallet is ready; it announces it in the group.
 async function tellKolo(address: Address) {
@@ -110,6 +135,8 @@ const routes: Record<string, (body: any) => Promise<unknown>> = {
     const deploy = await send({ to: factory!, data: factoryData! })
     const fund = await send({ to: wallet.address, value: WALLET_FUNDING })
     permission = newPermission(wallet.address, nairaToWei(limitNaira))
+    wallets.set(wallet.address.toLowerCase(), { permission, limitNaira })
+    saveWallets()
     return {
       address: wallet.address,
       deploy: link(deploy.hash),
@@ -126,6 +153,10 @@ const routes: Record<string, (body: any) => Promise<unknown>> = {
     if (!permission) throw new Error('create a wallet first')
     const approve = await approveWithSignature(permission, signature)
     return { approve: link(approve.hash), toldKolo: await tellKolo(permission.account) }
+  },
+
+  '/api/usage'({ address }: { address?: string }) {
+    return usage(address)
   },
 
   '/api/pay'() {

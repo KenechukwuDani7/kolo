@@ -20,7 +20,7 @@ import makeWASocket, {
 } from 'baileys'
 import pino from 'pino'
 import qrcode from 'qrcode-terminal'
-import { Kolo, isAddressed, type Action, type Incoming, type Member, type Payments } from './kolo.js'
+import { Kolo, isAddressed, type Action, type Incoming, type Member, type Payments, type WalletInfo } from './kolo.js'
 import { createPaymentLink, decryptWebhook, deposits, generateWallet, nairaPerDollar, roqquEnabled, send } from './roqqu.js'
 import { ussd } from './ussd.js'
 import { USSD_PAGE } from './ussd-page.js'
@@ -69,9 +69,26 @@ const payments: Payments | undefined = roqquEnabled
         console.log(`payout ${usdt} USDT to ${member.name} (${to}), ref ${reference}`)
         return { reference, sent: `${usdt} USDT on BSC at ₦${rate.toLocaleString('en-NG')}/$` }
       },
+      // A Roqqu customer wallet for the group itself: its own address under our parent account.
+      async groupAccount({ chatId, name }) {
+        const address = await generateWallet('bep20', { email: `group-${chatId.split('@')[0].replace(/\D/g, '')}@kolo-demo.app`, name })
+        console.log(`group account for ${chatId}: ${address}`)
+        return address
+      },
     }
   : undefined
-const kolo = new Kolo(reader, payments)
+
+// The passkey wallet service (wallet/), asked for a member's on-chain daily limit usage.
+const WALLET_URL = process.env.WALLET_URL ?? 'http://localhost:3116'
+const walletInfo: WalletInfo = {
+  async usage(address) {
+    const res = await fetch(`${WALLET_URL}/api/usage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address }) })
+    const json = await res.json()
+    if (!res.ok) throw new Error(json.error)
+    return json
+  },
+}
+const kolo = new Kolo(reader, payments, walletInfo)
 
 // Collections, the pot and open pay links survive restarts in data/state.json (private, not in git).
 const STATE_FILE = 'data/state.json'
@@ -110,13 +127,27 @@ async function paymentConfirmed(reference: string, via: string) {
 
 // Roqqu's webhook for the shared sandbox account points elsewhere, so also watch the
 // account's deposits: a deposit to one of a link's addresses means that link was paid.
+// Deposits sent straight to a group's own account are credited to that group's pot once.
+const creditedDeposits = new Set<string>()
+const watchStarted = Date.now()
 setInterval(async () => {
-  if (!pendingLinks.size) return
+  if (!pendingLinks.size && !kolo.snapshot().groupAccounts.length) return
   try {
     const seen = await deposits()
     for (const [reference, link] of pendingLinks) {
       const paid = seen.some((d) => link.addresses.includes(d.address) && Date.parse(d.createdAt) >= link.since - 60_000)
       if (paid) await paymentConfirmed(reference, 'deposit watch')
+    }
+    const rate = await nairaPerDollar()
+    for (const d of seen) {
+      if (creditedDeposits.has(d.hash) || Date.parse(d.createdAt) < watchStarted - 60_000) continue
+      // USDT/USDC are dollars; other coins are left out of the naira pot for now.
+      if (!['usdt', 'usdc'].includes(d.token)) continue
+      const actions = kolo.depositToGroup(d.address, Math.round(d.value * rate), d.hash)
+      if (!actions.length) continue
+      creditedDeposits.add(d.hash)
+      await performNow?.(actions)
+      saveState()
     }
   } catch (error) {
     console.warn('deposit watch:', (error as Error).message)

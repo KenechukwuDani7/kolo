@@ -122,6 +122,18 @@
   .wc-label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .85; }
   .wc-limit { font: 800 20px "Bricolage Grotesque", system-ui, sans-serif; }
 
+  .spendbox { margin: 0 0 18px; padding: 16px; border-radius: 20px; background: var(--tint); border: 1px solid var(--line); }
+  .sb-row, .sb-nums { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .sb-title { font-weight: 700; }
+  .sb-reset { font-size: 12px; font-weight: 600; color: var(--rose-deep); background: #fff; padding: 3px 9px; border-radius: 99px; }
+  .sb-nums { margin-top: 12px; }
+  .sb-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .sb-num { font: 800 24px "Bricolage Grotesque", system-ui, sans-serif; }
+  .sb-num.left { color: var(--rose-deep); }
+  .spendbox .meter { background: #fff; height: 16px; }
+  .meter i.full { background: linear-gradient(180deg, var(--rose-top), var(--rose)); }
+  .sb-foot { font-size: 13px; }
+
   .confetti { position: fixed; inset: 0; pointer-events: none; z-index: 5; overflow: hidden; }
   .confetti i { position: absolute; top: -12px; width: 9px; height: 14px; border-radius: 3px; animation: fall 2.4s cubic-bezier(.3, .6, .5, 1) forwards; }
   @keyframes fall { to { transform: translateY(110vh) rotate(720deg); } }
@@ -227,15 +239,22 @@
           <div style="text-align:right"><div class="wc-label">Secured by</div><div>Your fingerprint</div></div>
         </div>
       </div>
+      <div class="spendbox" aria-live="polite">
+        <div class="sb-row"><span class="sb-title">Today's spending</span><span class="sb-reset" id="sb-reset">Resets in 24h</span></div>
+        <div class="sb-nums">
+          <div><div class="sb-label">Spent</div><div class="sb-num" id="sb-used">₦0</div></div>
+          <div style="text-align:right"><div class="sb-label">Left to spend</div><div class="sb-num left" id="sb-left">₦10,000</div></div>
+        </div>
+        <div class="meter"><i id="meter"></i></div>
+        <div class="sb-foot muted" id="meter-text">₦0 of ₦10,000 used</div>
+      </div>
       <button class="btn" id="back">Back to WhatsApp</button>
     </div>
 
     <details id="demo">
       <summary>See your limit in action</summary>
       <div class="dbody">
-        <p class="muted">Kolo makes a few ₦<span id="pay-amt">4,000</span> group payments for you. Watch what happens when one would go over your limit.</p>
-        <div class="meter"><i id="meter"></i></div>
-        <div class="muted" id="meter-text">₦0 of ₦10,000 used today</div>
+        <p class="muted">Kolo makes a few ₦<span id="pay-amt">4,000</span> group payments for you. Watch "Today's spending" fill up, and see what happens when one would go over your limit.</p>
         <div style="margin-top:12px"><button class="btn" id="pay">Kolo pays ₦4,000</button></div>
         <div class="log" id="pay-log"></div>
       </div>
@@ -287,6 +306,7 @@
   }
 
   let credential, wallet, limit = 10000
+  const preview = location.hash.match(/preview=(\w+)/)?.[1]
 
   // Greet the person the /join link was made for.
   if (token) {
@@ -348,10 +368,29 @@
     $('wc-limit').textContent = naira(wallet.limit)
     $('pay-amt').textContent = Number(wallet.payment).toLocaleString('en-NG')
     $('pay').textContent = `Kolo pays ${naira(wallet.payment)}`
-    $('meter-text').textContent = `₦0 of ${naira(wallet.limit)} used today`
     $('done-sub').textContent = toldKolo ? 'Your wallet is ready and your WhatsApp group has been told.' : 'Your wallet is ready. Head back to WhatsApp to use it.'
+    showUsage({ used: 0, limit: wallet.limit, left: wallet.limit, resetsAt: Date.now() + 86_400_000 })
     show('s-done')
     confetti()
+    if (!preview) {
+      refreshUsage()
+      setInterval(refreshUsage, 30_000)
+    }
+  }
+
+  // Today's spending, read from the blockchain: spent, left, and when the day resets.
+  function showUsage({ used, limit, left, resetsAt }) {
+    const pct = Math.min(100, (used / limit) * 100)
+    $('meter').style.width = `${pct}%`
+    $('meter').classList.toggle('full', left <= 0)
+    $('sb-used').textContent = naira(used)
+    $('sb-left').textContent = naira(left)
+    $('meter-text').textContent = left <= 0 ? `Limit reached. Bigger payments need your fingerprint.` : `${naira(used)} of ${naira(limit)} used`
+    const hours = Math.max(0, (resetsAt - Date.now()) / 3_600_000)
+    $('sb-reset').textContent = hours < 1 ? `Resets in ${Math.max(1, Math.round(hours * 60))} min` : `Resets in ${Math.round(hours)}h`
+  }
+  async function refreshUsage() {
+    try { showUsage(await api('/api/usage', { address: wallet.address })) } catch {}
   }
 
   // A short pink-and-gold confetti burst when the wallet is ready.
@@ -387,19 +426,19 @@
     const line = (text, bad) => $('pay-log').prepend(Object.assign(document.createElement('div'), { textContent: text, className: bad ? 'bad' : '' }))
     try {
       const r = await api('/api/pay')
-      $('meter').style.width = `${Math.min(100, (r.used / wallet.limit) * 100)}%`
-      $('meter-text').textContent = `${naira(r.used)} of ${naira(wallet.limit)} used today`
+      await refreshUsage()
       if (r.ok) { line(`✓ Paid ${naira(wallet.payment)} to the group`); proof('Payment', r.spent) }
       else line(`✋ Blocked by the blockchain: that would go over your ${naira(wallet.limit)} limit. Kolo can't override it.`, true)
     } catch (e) { line(`Something went wrong: ${e.message}`, true) }
   })
 
   // Design preview without a passkey: #preview=limit | secure | done
-  const preview = location.hash.match(/preview=(\w+)/)?.[1]
   if (preview) {
     wallet = { address: '0x7a3fC81b2E94d0A6c55E1f0b9D2c4E8a1B6d93E2', limit: 10000, payment: 4000 }
-    if (preview === 'done') finish(true)
-    else show(`s-${preview}`)
+    if (preview === 'done') {
+      finish(true)
+      showUsage({ used: 4000, limit: 10000, left: 6000, resetsAt: Date.now() + 9.5 * 3_600_000 })
+    } else show(`s-${preview}`)
   }
 </script>
 </body>

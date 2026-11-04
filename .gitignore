@@ -10,3 +10,4 @@ wallet/artifacts/
 *.log
 # Kolo state (collections, pot, open pay links)
 bot/data/
+wallet/data/
