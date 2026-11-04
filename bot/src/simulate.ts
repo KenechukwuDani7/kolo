@@ -4,6 +4,7 @@
 //   npm run simulate -- --ai uses the real AI message reader (needs .env)
 //   npm run simulate -- --pay   pay links from a stand-in Roqqu, confirmed by script
 import { mkdirSync, writeFileSync } from 'node:fs'
+import { ussd } from './ussd.js'
 import { Kolo, type Action, type Incoming, type Member, type Payments, type Reader } from './kolo.js'
 
 const useAi = process.argv.includes('--ai')
@@ -77,6 +78,21 @@ if (usePay) {
   await vote('chinedu', 'poll-1', 'Yes')
   await vote('tobe', 'poll-1', 'Yes') // already settled: nothing more happens
   await say('chinedu', '/pot')
+  // Chinedu has no data: he pays his dues on USSD, then the group sees it.
+  const phone = (p: string) => (p === '2348011111111' ? { id: 'chinedu', name: 'Chinedu' } : undefined)
+  const dial = async (text: string, from = '2348011111111') => {
+    const out = await ussd(from, text, { kolo, memberByPhone: phone, groupName: () => 'CSC 301 class', perform: async (a) => show(a) })
+    console.log(`\n[USSD ${from} "${text}"]\n  ${out.replace(/\n/g, '\n  ')}`)
+  }
+  await dial('')
+  await dial('1')
+  await dial('1*1')
+  await dial('1*1*0000')
+  await dial('1*1*1234')
+  await dial('2')
+  await dial('3')
+  await dial('1')
+  await dial('', '2349999999999')
 } else {
   await say('ada', 'paid')
   await say('chidi', 'paid')

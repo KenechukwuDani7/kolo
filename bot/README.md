@@ -20,6 +20,7 @@ and say so if judges ask. Telegram (full group-bot support) stays the fallback.
 | `src/whatsapp.ts` | Baileys adapter: login, group messages, mentions, images, polls, vote decryption, DMs, Roqqu payment watch and webhook. |
 | `src/roqqu.ts` | Roqqu RAS client: payment links, deposits, member wallets, sends, naira rate, webhook decryption. |
 | `src/intent.ts` | AI message reader (English and Pidgin) that turns a message into one structured request. |
+| `src/ussd.ts`, `src/ussd-page.ts` | USSD menu in Africa's Talking format, and an on-screen phone to demo it at `/ussd`. |
 | `src/roqqu-check.ts` | Live check against the Roqqu sandbox. |
 
 ## Run
@@ -51,6 +52,7 @@ Add the spare number to a test group with 2–3 friends, then try:
 | 4 | Open your link, pick USDT, tap **Completed** (sandbox) | Within ~15 s: "X paid ✅ (confirmed by Roqqu)" and the card updates |
 | 4b | Organiser: `/confirm @name` | Ticks someone who paid cash; nobody else can do this |
 | 4c | `/spend 1500 @name printing`, then the group votes | Majority yes → Kolo pays them from the pot through Roqqu and posts a receipt |
+| 4d | Open http://localhost:3117/ussd, enter your WhatsApp number, dial, PIN 1234 | Pay dues over USSD; the group gets "paid ✅ by USSD" |
 | 5 | `@Kolo split 12k shawarma between me @Ada @Chidi` (real @mentions) | Shares posted, mentions highlighted, DMs to Ada and Chidi |
 | 6 | `/poll Invest ₦50,000 in MTN stock?` then everyone votes | A WhatsApp poll; Kolo reports Yes/No counts, then "Approved" at 3 yes |
 | 7 | Someone changes their vote | Counts update |

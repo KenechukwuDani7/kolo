@@ -56,6 +56,7 @@ const JOIN_URL = process.env.JOIN_URL ?? 'http://localhost:3116'
 const naira = (n: number) => `₦${n.toLocaleString('en-NG')}`
 // WhatsApp renders "@<number>" as the person's name when their id is in `mentions`.
 const tag = (m: Member) => `@${m.id.split('@')[0]}`
+const DEMO_CREDIT = 10_000
 const potLine = (pot: number) => `🏦 Group pot: ${naira(pot)}`
 const payLinkText =(m: Member, c: Collection, url: string) =>
   `Hi ${m.name}! Your share of *${c.title}* is ${naira(c.amount)}.\nPay here (USDT or BTC, via Roqqu): ${url}\nI'll tick you in the group as soon as it lands.`
@@ -79,9 +80,58 @@ export class Kolo {
   private polls = new Map<string, Poll>()
   private pollCount = 0
   // Pay-link reference → whose share it pays.
-  private references = new Map<string, { chatId: string; memberId: string }>()
+  private references: Map<string, { chatId: string; memberId: string }> = new Map<string, { chatId: string; memberId: string }>()
   // The group pot: naira collected and not yet spent, per chat.
   private pots = new Map<string, number>()
+  // Each member's Kolo balance, used by USSD (prototype: everyone starts with demo credit).
+  private balances = new Map<string, number>()
+
+  // Everything Kolo must remember across restarts, as plain JSON.
+  snapshot() {
+    return {
+      collections: [...this.collections].map(([chatId, c]) => ({ chatId, ...c, paid: [...c.paid], links: [...c.links] })),
+      pots: [...this.pots],
+      references: [...this.references],
+      balances: [...this.balances],
+    }
+  }
+
+  restore(s: ReturnType<Kolo['snapshot']>) {
+    for (const { chatId, paid, links, ...c } of s.collections) this.collections.set(chatId, { ...c, paid: new Map(paid), links: new Map(links) })
+    this.pots = new Map(s.pots)
+    this.references = new Map(s.references)
+    this.balances = new Map(s.balances ?? [])
+  }
+
+  // ── USSD: the same group money, from any phone with no data ──
+
+  potOf = (chatId: string) => this.pot(chatId)
+  balanceOf = (memberId: string) => this.balances.get(memberId) ?? DEMO_CREDIT
+
+  // Groups this member belongs to (any group that has run a collection with them in it).
+  groupsOf = (memberId: string) => [...this.collections].filter(([, c]) => c.members.some((m) => m.id === memberId)).map(([chatId]) => chatId)
+
+  // Collections this member still owes, across every group.
+  duesFor(memberId: string) {
+    return [...this.collections]
+      .filter(([, c]) => c.members.some((m) => m.id === memberId) && !c.paid.has(memberId))
+      .map(([chatId, c]) => ({ chatId, title: c.title, amount: c.amount }))
+  }
+
+  // Pay a collection from the member's Kolo balance (USSD), and tell the group.
+  payFromBalance(chatId: string, memberId: string): { ok: true; actions: Action[] } | { ok: false; reason: string } {
+    const c = this.collections.get(chatId)
+    const member = c?.members.find((m) => m.id === memberId)
+    if (!c || !member) return { ok: false, reason: 'That collection is closed.' }
+    if (c.paid.has(memberId)) return { ok: false, reason: 'You have already paid this one.' }
+    const balance = this.balanceOf(memberId)
+    if (balance < c.amount) return { ok: false, reason: `Your Kolo balance is ${naira(balance)}, not enough for ${naira(c.amount)}.` }
+    this.balances.set(memberId, balance - c.amount)
+    c.paid.set(memberId, member.name)
+    this.credit(chatId, c.amount)
+    const done = c.paid.size === c.members.length ? '\n🎉 Everybody don pay!' : ''
+    return { ok: true, actions: [this.duesCard(chatId, c, `${member.name} paid ✅ by USSD (no data needed)${done}`)].map(sign) }
+  }
 
   constructor(
     private read?: Reader,

@@ -22,6 +22,9 @@ import pino from 'pino'
 import qrcode from 'qrcode-terminal'
 import { Kolo, isAddressed, type Action, type Incoming, type Member, type Payments } from './kolo.js'
 import { createPaymentLink, decryptWebhook, deposits, generateWallet, nairaPerDollar, roqquEnabled, send } from './roqqu.js'
+import { ussd } from './ussd.js'
+import { USSD_PAGE } from './ussd-page.js'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 
 // The AI message reader is on when Bedrock credentials are present (.env), off otherwise.
 try {
@@ -69,6 +72,28 @@ const payments: Payments | undefined = roqquEnabled
   : undefined
 const kolo = new Kolo(reader, payments)
 
+// Collections, the pot and open pay links survive restarts in data/state.json (private, not in git).
+const STATE_FILE = 'data/state.json'
+if (existsSync(STATE_FILE)) {
+  const saved = JSON.parse(readFileSync(STATE_FILE, 'utf8'))
+  kolo.restore(saved.kolo)
+  for (const [ref, link] of saved.pendingLinks ?? []) pendingLinks.set(ref, link)
+  for (const [id, address] of saved.payoutAddresses ?? []) payoutAddresses.set(id, address)
+  console.log(`Restored ${saved.kolo.collections.length} collection(s) and ${pendingLinks.size} open pay link(s)`)
+}
+function saveState() {
+  mkdirSync('data', { recursive: true })
+  writeFileSync(STATE_FILE, JSON.stringify({ kolo: kolo.snapshot(), pendingLinks: [...pendingLinks], payoutAddresses: [...payoutAddresses] }, null, 1))
+}
+
+// USSD: a caller's phone number → their member id in the group, and group names for menus.
+const memberIdByPhone = new Map<string, string>()
+const groupNames = new Map<string, string>()
+const phoneDigits = (raw: string) => {
+  const d = raw.replace(/\D/g, '')
+  return d.length === 11 && d.startsWith('0') ? `234${d.slice(1)}` : d // 0803… → 234803…
+}
+
 // Set by start(): sends Kolo's actions on the live socket (it changes on reconnect).
 let performNow: ((actions: Action[]) => Promise<void>) | undefined
 
@@ -76,6 +101,7 @@ async function paymentConfirmed(reference: string, via: string) {
   if (!pendingLinks.delete(reference)) return
   console.log(`payment confirmed for ${reference} via ${via}`)
   await performNow?.(kolo.confirmPayment(reference))
+  saveState()
 }
 
 // Roqqu's webhook for the shared sandbox account points elsewhere, so also watch the
@@ -120,6 +146,33 @@ const ALLOWED = (process.env.KOLO_GROUPS ?? '').split(',').map((s) => s.trim()).
 let loginState: { qr?: string; status: string } = { status: 'Starting…' }
 const QR_PORT = Number(process.env.QR_PORT ?? 3117)
 createServer(async (req, res) => {
+  // USSD: the simulator page (GET) and the Africa's Talking-style callback (POST).
+  if (req.url === '/ussd' && req.method === 'GET') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(USSD_PAGE)
+    return
+  }
+  if (req.url === '/ussd' && req.method === 'POST') {
+    let body = ''
+    for await (const chunk of req) body += chunk
+    const form = new URLSearchParams(body)
+    const reply = await ussd(form.get('phoneNumber') ?? '', form.get('text') ?? '', {
+      kolo,
+      memberByPhone: (raw) => {
+        const id = memberIdByPhone.get(phoneDigits(raw))
+        return id ? { id, name: names.get(id) ?? 'friend' } : undefined
+      },
+      groupName: (chatId) => groupNames.get(chatId) ?? 'Your group',
+      perform: async (actions) => {
+        await performNow?.(actions)
+        saveState()
+      },
+    }).catch((error) => {
+      console.error('ussd failed:', error)
+      return 'END Kolo is busy. Please try again.'
+    })
+    res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end(reply)
+    return
+  }
   // Roqqu webhook (needs a public HTTPS address pointing here). Body: { hash }, iv in x-api-key.
   if (req.method === 'POST' && req.url === '/roqqu/webhook') {
     let body = ''
@@ -177,7 +230,9 @@ async function start() {
       const groups = Object.values(await sock.groupFetchAllParticipating())
       allowedIds.clear()
       for (const g of groups) if (ALLOWED.includes(g.id) || ALLOWED.includes(g.subject)) allowedIds.add(g.id)
-      if (allowedIds.size) console.log(`Active only in: ${groups.filter((g) => allowedIds.has(g.id)).map((g) => g.subject).join(', ')}`)
+      // Load members now so USSD callers are recognised before anyone types in the group.
+      for (const id of allowedIds) await membersOf(id).catch(() => undefined)
+      if (allowedIds.size) console.log(`Active only in: ${groups.filter((g) => allowedIds.has(g.id)).map((g) => g.subject).join(', ')} · ${memberIdByPhone.size} phone numbers known for USSD`)
       else console.log(`No KOLO_GROUPS set, so Kolo will stay silent. Groups it can see:\n${groups.map((g) => `  ${g.subject}  (${g.id})`).join('\n')}`)
     }
     if (connection === 'close') {
@@ -201,14 +256,23 @@ async function start() {
   // Everyone in the group except Kolo itself, named by the names they've shown in chat.
   async function membersOf(chatId: string): Promise<Member[]> {
     if (!groupMembers.has(chatId)) {
-      const { participants } = await sock.groupMetadata(chatId)
+      const { subject, participants } = await sock.groupMetadata(chatId)
+      groupNames.set(chatId, subject)
       groupMembers.set(chatId, participants.map((p) => p.id).filter((id) => !isMe(id)))
+      // Groups address people by LID; remember their phone numbers for USSD callers.
+      for (const p of participants) {
+        for (const jid of [p.phoneNumber, p.id]) if (jid?.endsWith('@s.whatsapp.net')) memberIdByPhone.set(phoneDigits(jid.split('@')[0]), p.id)
+        if (!names.has(p.id) && p.notify) names.set(p.id, p.notify)
+      }
     }
     return groupMembers.get(chatId)!.map((id) => ({ id, name: nameOf(id) }))
   }
 
   // Membership changes (someone added or removed) refresh the list on the next message.
-  sock.ev.on('group-participants.update', ({ id }) => groupMembers.delete(id))
+  sock.ev.on('group-participants.update', ({ id }) => {
+    groupMembers.delete(id)
+    if (allowedIds.has(id)) void membersOf(id).catch(() => undefined)
+  })
 
   // origin: the message being answered; replies marked `reply` quote it, like a swipe-to-reply.
   async function perform(actions: Action[], origin?: WAMessage) {
@@ -228,6 +292,7 @@ async function start() {
         if (said && a.type !== 'dm') sentContext.set(sent.key.id, { kolo: stripLabel(said), asked: textOf(origin?.message) })
       }
     }
+    if (actions.length) saveState()
   }
 
   // A swipe-reply to one of Kolo's messages, even without the word "kolo".
