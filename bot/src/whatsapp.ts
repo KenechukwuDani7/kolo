@@ -113,6 +113,9 @@ const phoneDigits = (raw: string) => {
   return d.length === 11 && d.startsWith('0') ? `234${d.slice(1)}` : d // 0803… → 234803…
 }
 
+// Kolo's own WhatsApp number (digits), known once connected.
+let koloNumber: string | undefined
+
 // Public links from scripts/tunnels.mjs: /join DMs use the public wallet page when it's up.
 const PUBLIC_URLS = 'data/public-urls.json'
 function loadPublicUrls() {
@@ -225,10 +228,12 @@ createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end(reply)
     return
   }
-  // The wallet page asks who a /join link is for, to greet them by name.
+  // The wallet page asks who a /join link is for, to greet them by name, and for Kolo's
+  // number so "Back to WhatsApp" opens the chat with Kolo.
   if (req.url?.startsWith('/wallet/invite') && req.method === 'GET') {
     const who = kolo.invite(new URL(req.url, 'http://x').searchParams.get('t') ?? '')
-    res.writeHead(who ? 200 : 404, { 'content-type': 'application/json' }).end(JSON.stringify(who ? { name: who.name, group: groupNames.get(who.chatId) ?? 'your group' } : {}))
+    const body = { kolo: koloNumber, ...(who && { name: who.name, group: groupNames.get(who.chatId) ?? 'your group' }) }
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(body))
     return
   }
   // The wallet page reports a finished /join: { token, address, dailyLimit }.
@@ -310,6 +315,7 @@ async function start() {
     if (connection === 'open') {
       loginState = { status: `✅ Connected as ${sock.user?.id}` }
       console.log(`✅ Kolo connected as ${sock.user?.id}`)
+      koloNumber = sock.user?.id.split(/[:@]/)[0]
       const groups = Object.values(await sock.groupFetchAllParticipating())
       allowedIds.clear()
       for (const g of groups) if (ALLOWED.includes(g.id) || ALLOWED.includes(g.subject)) allowedIds.add(g.id)

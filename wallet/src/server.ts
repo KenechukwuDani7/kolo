@@ -116,9 +116,8 @@ async function readBody(req: IncomingMessage) {
 const routes: Record<string, (body: any) => Promise<unknown>> = {
   // Who this link is for, so the page can greet them: { name, group } from the bot.
   async '/api/invite'({ token }: { token?: string }) {
-    if (!token) return {}
     try {
-      const res = await fetch(`${BOT_URL}/wallet/invite?t=${encodeURIComponent(token)}`)
+      const res = await fetch(`${BOT_URL}/wallet/invite?t=${encodeURIComponent(token ?? '')}`)
       return res.ok ? await res.json() : {}
     } catch {
       return {}

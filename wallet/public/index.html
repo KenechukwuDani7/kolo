@@ -248,7 +248,7 @@
         <div class="meter"><i id="meter"></i></div>
         <div class="sb-foot muted" id="meter-text">₦0 of ₦10,000 used</div>
       </div>
-      <button class="btn" id="back">Back to WhatsApp</button>
+      <button class="btn" id="back">Back to Kolo on WhatsApp</button>
     </div>
 
     <details id="demo">
@@ -308,14 +308,15 @@
   let credential, wallet, limit = 10000
   const preview = location.hash.match(/preview=(\w+)/)?.[1]
 
-  // Greet the person the /join link was made for.
-  if (token) {
-    api('/api/invite', { token }).then((who) => {
-      if (!who.name) return
-      $('hello').textContent = `Hi ${who.name} 👋`
-      $('sub').textContent = `Set up your own Kolo wallet for ${who.group}. It takes about 20 seconds.`
-    }).catch(() => {})
-  }
+  // Greet the person the /join link was made for, and learn Kolo's number so
+  // "Back to WhatsApp" opens their chat with Kolo.
+  let koloChat = 'https://wa.me/'
+  api('/api/invite', { token }).then((who) => {
+    if (who.kolo) koloChat = `https://wa.me/${who.kolo}`
+    if (!who.name) return
+    $('hello').textContent = `Hi ${who.name} 👋`
+    $('sub').textContent = `Set up your own Kolo wallet for ${who.group}. It takes about 20 seconds.`
+  }).catch(() => {})
 
   $('start').onclick = () => show('s-limit')
   document.querySelectorAll('input[name=limit]').forEach((r) => (r.onchange = () => (limit = Number(r.value))))
@@ -420,7 +421,7 @@
   card.addEventListener('pointermove', (e) => tilt(e.clientX, e.clientY))
   card.addEventListener('pointerleave', () => { card.style.setProperty('--rx', '8deg'); card.style.setProperty('--ry', '0deg') })
 
-  $('back').onclick = () => { location.href = 'https://wa.me/' }
+  $('back').onclick = () => { location.href = koloChat }
 
   $('pay').onclick = once(async () => {
     const line = (text, bad) => $('pay-log').prepend(Object.assign(document.createElement('div'), { textContent: text, className: bad ? 'bad' : '' }))
