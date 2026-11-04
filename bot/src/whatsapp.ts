@@ -113,6 +113,22 @@ const phoneDigits = (raw: string) => {
   return d.length === 11 && d.startsWith('0') ? `234${d.slice(1)}` : d // 0803… → 234803…
 }
 
+// Public links from scripts/tunnels.mjs: /join DMs use the public wallet page when it's up.
+const PUBLIC_URLS = 'data/public-urls.json'
+function loadPublicUrls() {
+  try {
+    const { wallet } = JSON.parse(readFileSync(PUBLIC_URLS, 'utf8'))
+    if (wallet && process.env.JOIN_URL !== wallet) {
+      process.env.JOIN_URL = wallet
+      console.log(`Public wallet link: ${wallet}`)
+    }
+  } catch {
+    // no tunnel running: links stay on localhost
+  }
+}
+loadPublicUrls()
+setInterval(loadPublicUrls, 10_000)
+
 // How far back Kolo answers messages it missed while offline.
 const CATCH_UP_MS = Number(process.env.CATCH_UP_MINUTES ?? 15) * 60_000
 
@@ -245,6 +261,14 @@ createServer(async (req, res) => {
     } catch (error) {
       console.warn('bad roqqu webhook:', (error as Error).message)
     }
+    return
+  }
+  // The login QR and status are for this machine only. Through a public link (a tunnel),
+  // the host is the public name: send people to the USSD phone instead, never the QR,
+  // or anyone could link their phone and take over the bot's WhatsApp number.
+  const local = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(req.headers.host ?? '')
+  if (!local) {
+    res.writeHead(302, { location: '/ussd' }).end()
     return
   }
   if (req.url === '/state') {

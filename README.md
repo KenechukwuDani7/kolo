@@ -36,6 +36,8 @@ npm run whatsapp            # link a spare WhatsApp number by QR, then use the g
 
 Wallet test: see [`wallet/README.md`](wallet/README.md).
 
+Public demo links (free, no account): with the bot on :3117 and the wallet on :3116, run `node scripts/tunnels.mjs path/to/cloudflared`. It opens Cloudflare quick tunnels, prints the wallet link and the USSD phone link, and the bot switches its `/join` links to the public wallet page. The WhatsApp login page is never served through the public link.
+
 ## Team
 
 - Kenechukwu Okoye, team lead, product and design

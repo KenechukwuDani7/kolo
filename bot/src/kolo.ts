@@ -62,7 +62,8 @@ type Collection = {
 }
 type Poll = { chatId: string; question: string; needed: number; settled: boolean; spend?: Spend }
 
-const JOIN_URL = process.env.JOIN_URL ?? 'http://localhost:3116'
+// Read on every use: the public wallet link can change while Kolo runs (see scripts/tunnels.mjs).
+const joinUrl = () => process.env.JOIN_URL ?? 'http://localhost:3116'
 const naira = (n: number) => `₦${n.toLocaleString('en-NG')}`
 // WhatsApp renders "@<number>" as the person's name when their id is in `mentions`.
 const tag = (m: Member) => `@${m.id.split('@')[0]}`
@@ -500,7 +501,7 @@ export class Kolo {
         text: `${naira(amount)} split ${people.length} ways is ${naira(share)} each.\n${lines}\nI've sent each of you a pay request in DM.`,
         mentions: owing.map((p) => p.id),
       },
-      ...owing.map((p): Action => ({ type: 'dm', userId: p.id, text: `${msg.sender.name} split ${naira(amount)} with you. Your share: ${naira(share)}. Pay: ${JOIN_URL}` })),
+      ...owing.map((p): Action => ({ type: 'dm', userId: p.id, text: `${msg.sender.name} split ${naira(amount)} with you. Your share: ${naira(share)}. Pay: ${joinUrl()}` })),
     ]
   }
 
@@ -511,7 +512,7 @@ export class Kolo {
     // Sending money needs the sender's own approval; the bot only prepares it.
     return [
       { type: 'text', chatId: msg.chatId, text: `${msg.sender.name}, I've sent you a private link to confirm ${naira(amount)} to ${to.map((m) => m.name).join(', ')}.` },
-      { type: 'dm', userId: msg.sender.id, text: `Confirm ${naira(amount)} to ${to.map((m) => m.name).join(', ')}: ${JOIN_URL}\n(Within your daily limit it goes through instantly; above it, you'll confirm with your fingerprint.)` },
+      { type: 'dm', userId: msg.sender.id, text: `Confirm ${naira(amount)} to ${to.map((m) => m.name).join(', ')}: ${joinUrl()}\n(Within your daily limit it goes through instantly; above it, you'll confirm with your fingerprint.)` },
     ]
   }
 
@@ -525,7 +526,7 @@ export class Kolo {
       {
         type: 'dm',
         userId: msg.sender.id,
-        text: `Hi ${msg.sender.name}! Tap to set up your own Kolo wallet with your fingerprint or face (about 20 seconds): ${JOIN_URL}/?t=${token}\nNo password, no seed phrase. Only your device can approve big payments.`,
+        text: `Hi ${msg.sender.name}! Tap to set up your own Kolo wallet with your fingerprint or face (about 20 seconds): ${joinUrl()}/?t=${token}\nNo password, no seed phrase. Only your device can approve big payments.`,
       },
       this.text(msg, `${msg.sender.name}, check your DM. I've sent you a private link.`),
     ]
