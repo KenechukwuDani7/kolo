@@ -13,7 +13,7 @@ const reader: Reader | undefined = ai?.readIntent
 const usePay = process.argv.includes('--pay')
 const payments: Payments | undefined = usePay
   ? {
-      link: async ({ member }) => ({ reference: `SIM${member.id.toUpperCase()}`, url: `https://checkout-sandbox.roqqu.io/?refId=sim-${member.id}` }),
+      link: async ({ member, title }) => ({ reference: `SIM${member.id.toUpperCase()}${title === 'Kolo top-up' ? 'TOPUP' : ''}`, url: `https://checkout-sandbox.roqqu.io/?refId=sim-${member.id}` }),
       payout: async ({ amount }) => ({ reference: 'SIMPAYOUT1', sent: `${(amount / 1375).toFixed(2)} USDT on BSC` }),
       groupAccount: async () => '0xab12000000000000000000000000000000cd34',
     }
@@ -86,6 +86,11 @@ if (usePay) {
     const out = await ussd(from, text, { kolo, memberByPhone: phone, groupName: () => 'CSC 301 class', perform: async (a) => show(a) })
     console.log(`\n[USSD ${from} "${text}"]\n  ${out.replace(/\n/g, '\n  ')}`)
   }
+  // Chinedu tops up his Kolo balance first (it starts at ₦0).
+  await say('chinedu', '/balance')
+  await say('chinedu', '/topup 10k')
+  console.log('\n[Roqqu confirms the top-up]')
+  show(kolo.confirmPayment('SIMCHINEDUTOPUP'))
   await dial('')
   await dial('1')
   await dial('1*1')
@@ -102,6 +107,8 @@ if (usePay) {
   console.log('\n[wallet page: passkey created, daily limit signed]')
   show(kolo.walletReady(token, '0x1234567890abcdef1234567890abcdef12345678', '0.001 ETH'))
   show(kolo.walletReady(token, '0x1234567890abcdef1234567890abcdef12345678', '0.001 ETH')) // a used link does nothing
+  await say('tobe', '/topup 5k')
+  show(kolo.confirmPayment('SIMTOBETOPUP'))
   await say('tobe', '/cashout 3k')
   await say('tobe', '/cashout 50k') // more than his balance
   await say('tobe', '/limit')

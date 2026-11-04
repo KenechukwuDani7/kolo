@@ -154,6 +154,19 @@ const routes: Record<string, (body: any) => Promise<unknown>> = {
     return { approve: link(approve.hash), toldKolo: await tellKolo(permission.account) }
   },
 
+  // Owner's name and Kolo balance, and top-up links, come from the bot.
+  async '/api/balance'({ address }: { address: string }) {
+    const res = await fetch(`${BOT_URL}/wallet/balance?address=${encodeURIComponent(address)}`)
+    return res.ok ? res.json() : {}
+  },
+
+  async '/api/topup'({ address, amount }: { address: string; amount: number }) {
+    const res = await fetch(`${BOT_URL}/wallet/topup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address, amount }) })
+    const json = await res.json()
+    if (!res.ok) throw new Error(json.error)
+    return json
+  },
+
   '/api/usage'({ address }: { address?: string }) {
     return usage(address)
   },

@@ -236,6 +236,30 @@ createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(body))
     return
   }
+  // The wallet page shows the owner's name and Kolo balance: ?address=0x…
+  if (req.url?.startsWith('/wallet/balance') && req.method === 'GET') {
+    const owner = kolo.ownerOfWallet(new URL(req.url, 'http://x').searchParams.get('address') ?? '')
+    res.writeHead(owner ? 200 : 404, { 'content-type': 'application/json' }).end(JSON.stringify(owner ? { name: owner.name, balance: owner.balance } : {}))
+    return
+  }
+  // The wallet page's Top up button: { address, amount } → a personal Roqqu pay link.
+  if (req.url === '/wallet/topup' && req.method === 'POST') {
+    let body = ''
+    for await (const chunk of req) body += chunk
+    try {
+      const { address, amount } = JSON.parse(body)
+      const owner = kolo.ownerOfWallet(String(address))
+      const naira = Math.round(Number(amount))
+      if (!owner) throw new Error('unknown wallet')
+      if (!(naira >= 1500 && naira <= 200_000)) throw new Error('amount must be between ₦1,500 and ₦200,000')
+      const url = await kolo.topupLink({ id: owner.memberId, name: owner.name }, owner.chatId, naira)
+      saveState()
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ url }))
+    } catch (error) {
+      res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: (error as Error).message }))
+    }
+    return
+  }
   // The wallet page reports a finished /join: { token, address, dailyLimit }.
   if (req.url === '/wallet/registered' && req.method === 'POST') {
     let body = ''

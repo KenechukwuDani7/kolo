@@ -122,6 +122,16 @@
   .wc-label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .85; }
   .wc-limit { font: 800 20px "Bricolage Grotesque", system-ui, sans-serif; }
 
+  .wc-holder { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 2px; }
+  .wc-name { font: 800 22px "Bricolage Grotesque", system-ui, sans-serif; letter-spacing: .04em; text-transform: uppercase; text-shadow: 0 1px 2px rgba(0,0,0,.15); }
+  .wc-holder .wc-addr { font-size: 13px; opacity: .85; }
+  .balancebox { margin: 0 0 14px; padding: 16px; border-radius: 20px; background: #fff; border: 1px solid var(--line); box-shadow: 0 6px 16px -12px rgba(42, 20, 28, .15); }
+  .bb-note { font-size: 13px; margin: 8px 0 12px; }
+  .topups { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chipbtn { flex: 1; min-width: 90px; border: 2px solid var(--line); background: var(--tint); color: var(--rose-deep); border-radius: 14px; padding: 10px 8px; font: 700 15px "Plus Jakarta Sans", system-ui, sans-serif; cursor: pointer; transition: transform .1s, border-color .15s; }
+  .chipbtn:hover:not(:disabled) { border-color: var(--rose); transform: translateY(-1px); }
+  .chipbtn:active:not(:disabled) { transform: translateY(1px); }
+  .chipbtn:disabled { opacity: .6; cursor: progress; }
   .spendbox { margin: 0 0 18px; padding: 16px; border-radius: 20px; background: var(--tint); border: 1px solid var(--line); }
   .sb-row, .sb-nums { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
   .sb-title { font-weight: 700; }
@@ -233,11 +243,27 @@
       <p class="muted" id="done-sub">Your wallet is ready. Head back to WhatsApp, your group has been told.</p>
       <div class="wallet-card">
         <div class="wc-row"><span class="wc-brand">🐷 Kolo</span><span class="wc-chip"></span></div>
-        <div class="wc-addr" id="wc-addr">0x0000…0000</div>
+        <div class="wc-holder">
+          <div class="wc-name" id="wc-name">Kolo member</div>
+          <div class="wc-addr" id="wc-addr">0x0000…0000</div>
+        </div>
         <div class="wc-row">
           <div><div class="wc-label">Daily limit</div><div class="wc-limit" id="wc-limit">₦10,000</div></div>
           <div style="text-align:right"><div class="wc-label">Secured by</div><div>Your fingerprint</div></div>
         </div>
+      </div>
+      <div class="balancebox" aria-live="polite">
+        <div class="sb-row">
+          <div><div class="sb-label">Kolo balance</div><div class="sb-num" id="bal">₦0</div></div>
+          <span class="sb-reset">Your own account</span>
+        </div>
+        <p class="muted bb-note">Top up with your personal Roqqu link. Pay in USDT or BTC, and it lands here.</p>
+        <div class="topups">
+          <button class="chipbtn" data-amount="2000">+ ₦2,000</button>
+          <button class="chipbtn" data-amount="5000">+ ₦5,000</button>
+          <button class="chipbtn" data-amount="10000">+ ₦10,000</button>
+        </div>
+        <div class="status" id="topup-status" hidden></div>
       </div>
       <div class="spendbox" aria-live="polite">
         <div class="sb-row"><span class="sb-title">Today's spending</span><span class="sb-reset" id="sb-reset">Resets in 24h</span></div>
@@ -311,9 +337,11 @@
   // Greet the person the /join link was made for, and learn Kolo's number so
   // "Back to WhatsApp" opens their chat with Kolo.
   let koloChat = 'https://wa.me/'
+  let holder = ''
   api('/api/invite', { token }).then((who) => {
     if (who.kolo) koloChat = `https://wa.me/${who.kolo}`
     if (!who.name) return
+    holder = who.name
     $('hello').textContent = `Hi ${who.name} 👋`
     $('sub').textContent = `Set up your own Kolo wallet for ${who.group}. It takes about 20 seconds.`
   }).catch(() => {})
@@ -366,6 +394,7 @@
 
   function finish(toldKolo) {
     $('wc-addr').textContent = `${wallet.address.slice(0, 6)}…${wallet.address.slice(-4)}`
+    $('wc-name').textContent = holder || 'Kolo member'
     $('wc-limit').textContent = naira(wallet.limit)
     $('pay-amt').textContent = Number(wallet.payment).toLocaleString('en-NG')
     $('pay').textContent = `Kolo pays ${naira(wallet.payment)}`
@@ -375,9 +404,35 @@
     confetti()
     if (!preview) {
       refreshUsage()
+      refreshBalance()
       setInterval(refreshUsage, 30_000)
+      setInterval(refreshBalance, 15_000)
     }
   }
+
+  // Kolo balance and the owner's name on the card, from Kolo itself.
+  async function refreshBalance() {
+    try {
+      const b = await api('/api/balance', { address: wallet.address })
+      if (b.name) $('wc-name').textContent = b.name
+      if (b.balance !== undefined) $('bal').textContent = naira(b.balance)
+    } catch {}
+  }
+
+  // Top up: get a personal Roqqu pay link and open it; the balance updates once it's paid.
+  document.querySelectorAll('.chipbtn').forEach((b) => {
+    b.onclick = once(async () => {
+      const amount = Number(b.dataset.amount)
+      try {
+        status($('topup-status'), `Making your ${naira(amount)} top-up link…`, 'busy')
+        const { url } = await api('/api/topup', { address: wallet.address, amount })
+        window.open(url, '_blank')
+        status($('topup-status'), 'Pay on the Roqqu page that opened. Your balance updates here once it lands.', 'ok')
+      } catch (e) {
+        status($('topup-status'), `Couldn't make a top-up link: ${e.message}`, 'bad')
+      }
+    })
+  })
 
   // Today's spending, read from the blockchain: spent, left, and when the day resets.
   function showUsage({ used, limit, left, resetsAt }) {
@@ -439,6 +494,8 @@
     if (preview === 'done') {
       finish(true)
       showUsage({ used: 4000, limit: 10000, left: 6000, resetsAt: Date.now() + 9.5 * 3_600_000 })
+      $('wc-name').textContent = 'Kenechukwu'
+      $('bal').textContent = naira(7000)
     } else show(`s-${preview}`)
   }
 </script>

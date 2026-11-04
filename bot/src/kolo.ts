@@ -67,7 +67,9 @@ const joinUrl = () => process.env.JOIN_URL ?? 'http://localhost:3116'
 const naira = (n: number) => `₦${n.toLocaleString('en-NG')}`
 // WhatsApp renders "@<number>" as the person's name when their id is in `mentions`.
 const tag = (m: Member) => `@${m.id.split('@')[0]}`
-const DEMO_CREDIT = 10_000
+// Starting balance before any top-up (0: money only comes in through a real top-up).
+const DEMO_CREDIT = Number(process.env.DEMO_CREDIT ?? 0)
+type PayRef = { chatId: string; memberId: string; kind?: 'topup'; amount?: number }
 const potLine = (pot: number) => `Group pot: ${naira(pot)}`
 const payLinkText =(m: Member, c: Collection, url: string) =>
   `Hi ${m.name}! Your share of *${c.title}* is ${naira(c.amount)}.\nPay here (USDT or BTC, via Roqqu): ${url}\nI'll tick you in the group as soon as it lands.`
@@ -90,15 +92,17 @@ export class Kolo {
   private collections = new Map<string, Collection>()
   private polls = new Map<string, Poll>()
   private pollCount = 0
-  // Pay-link reference → whose share it pays.
-  private references: Map<string, { chatId: string; memberId: string }> = new Map<string, { chatId: string; memberId: string }>()
+  // Pay-link reference → whose share it pays, or whose Kolo balance it tops up.
+  private references = new Map<string, PayRef>()
   // The group pot: naira collected and not yet spent, per chat.
   private pots = new Map<string, number>()
-  // Each member's Kolo balance, used by USSD (prototype: everyone starts with demo credit).
+  // Each member's Kolo balance: filled by top-ups, spent by USSD and cash-outs.
   private balances = new Map<string, number>()
   // /join links: one-time token → who asked, and each member's own passkey wallet address.
   private joinTokens = new Map<string, { chatId: string; memberId: string; name: string }>()
   private wallets = new Map<string, string>()
+  // Who owns each wallet (member id → name and the group they joined from).
+  private owners = new Map<string, { name: string; chatId: string }>()
   // Each group's own Roqqu account address.
   private groupAccounts = new Map<string, string>()
 
@@ -111,6 +115,7 @@ export class Kolo {
       balances: [...this.balances],
       joinTokens: [...this.joinTokens],
       wallets: [...this.wallets],
+      owners: [...this.owners],
       groupAccounts: [...this.groupAccounts],
     }
   }
@@ -122,6 +127,7 @@ export class Kolo {
     this.balances = new Map(s.balances ?? [])
     this.joinTokens = new Map(s.joinTokens ?? [])
     this.wallets = new Map(s.wallets ?? [])
+    this.owners = new Map(s.owners ?? [])
     this.groupAccounts = new Map(s.groupAccounts ?? [])
   }
 
@@ -137,6 +143,7 @@ export class Kolo {
     if (!who) return []
     this.joinTokens.delete(token)
     this.wallets.set(who.memberId, address)
+    this.owners.set(who.memberId, { name: who.name, chatId: who.chatId })
     const short = `${address.slice(0, 6)}…${address.slice(-4)}`
     return [
       {
@@ -151,6 +158,21 @@ export class Kolo {
 
   potOf = (chatId: string) => this.pot(chatId)
   balanceOf = (memberId: string) => this.balances.get(memberId) ?? DEMO_CREDIT
+
+  // The wallet page knows only the wallet address; find its owner.
+  ownerOfWallet(address: string) {
+    const memberId = [...this.wallets].find(([, a]) => a.toLowerCase() === address.toLowerCase())?.[0]
+    const owner = memberId && this.owners.get(memberId)
+    return owner ? { memberId, ...owner, balance: this.balanceOf(memberId) } : undefined
+  }
+
+  // A personal Roqqu pay link that adds money to this member's Kolo balance.
+  async topupLink(member: Member, chatId: string, amount: number): Promise<string> {
+    if (!this.payments) throw new Error('top-ups need Roqqu')
+    const { reference, url } = await this.payments.link({ chatId, member, amount, title: 'Kolo top-up' })
+    this.references.set(reference, { chatId, memberId: member.id, kind: 'topup', amount })
+    return url
+  }
 
   // Groups this member belongs to (any group that has run a collection with them in it).
   // "Group pot: ₦6,000 (own account 0xab…cd)"
@@ -204,6 +226,13 @@ export class Kolo {
   // The payment provider confirmed a pay link was paid: tick that member off.
   confirmPayment(reference: string, via = 'Roqqu'): Action[] {
     const ref = this.references.get(reference)
+    if (ref?.kind === 'topup') {
+      // A top-up: credit the member's balance once, and tell them privately.
+      this.references.delete(reference)
+      const balance = this.balanceOf(ref.memberId) + (ref.amount ?? 0)
+      this.balances.set(ref.memberId, balance)
+      return [{ type: 'dm' as const, userId: ref.memberId, text: `Top-up received: ${naira(ref.amount ?? 0)} is now in your Kolo balance. Balance: ${naira(balance)}.` }].map(sign)
+    }
     const c = ref && this.collections.get(ref.chatId)
     const member = c?.members.find((m) => m.id === ref!.memberId)
     if (!ref || !c || !member || c.paid.has(member.id)) return []
@@ -301,6 +330,10 @@ export class Kolo {
         return this.cashout(msg, parseAmount(args[0] ?? ''))
       case 'limit':
         return this.limit(msg)
+      case 'topup':
+        return this.topup(msg, parseAmount(args[0] ?? ''))
+      case 'balance':
+        return [this.text(msg, `${msg.sender.name}, your Kolo balance is ${naira(this.balanceOf(msg.sender.id))}. Add money with ${FEATURES.topup.say}`)]
       case '':
       case 'help': {
         const topic = featureFor(args.join(' '))
@@ -339,6 +372,10 @@ export class Kolo {
         return this.cashout(msg, intent.amount ?? undefined)
       case 'limit':
         return this.limit(msg)
+      case 'topup':
+        return this.topup(msg, intent.amount ?? undefined)
+      case 'balance':
+        return [this.text(msg, `${msg.sender.name}, your Kolo balance is ${naira(this.balanceOf(msg.sender.id))}. Add money with ${FEATURES.topup.say}`)]
       case 'help':
         // Explanations come from FEATURES, never from the AI, so they are always accurate.
         if (intent.topic) return [this.text(msg, explain(intent.topic))]
@@ -553,6 +590,25 @@ export class Kolo {
     }
   }
 
+  // "/topup 5k": DM a personal Roqqu pay link; when it's paid, the balance goes up.
+  private async topup(msg: Incoming, amount: number | undefined): Promise<Action[]> {
+    if (!amount) return [this.text(msg, `How much do you want to add? Say it like: ${FEATURES.topup.say}`)]
+    if (!this.payments) {
+      this.balances.set(msg.sender.id, this.balanceOf(msg.sender.id) + amount)
+      return [this.text(msg, `Added ${naira(amount)} (test mode, no money moved). Balance: ${naira(this.balanceOf(msg.sender.id))}`)]
+    }
+    try {
+      const url = await this.topupLink(msg.sender, msg.chatId, amount)
+      return [
+        this.text(msg, `${msg.sender.name}, I've sent your top-up link in DM.`),
+        { type: 'dm', userId: msg.sender.id, text: `Top up ${naira(amount)} into your Kolo balance: ${url}\nPay with USDT or BTC through Roqqu. I'll message you as soon as it lands.` },
+      ]
+    } catch (error) {
+      console.error('top-up link failed:', error)
+      return [this.text(msg, "I couldn't make a top-up link right now. Try again in a minute.")]
+    }
+  }
+
   // Move money from your Kolo balance to your own passkey wallet, through Roqqu.
   private async cashout(msg: Incoming, amount: number | undefined): Promise<Action[]> {
     const address = this.wallets.get(msg.sender.id)
@@ -745,6 +801,13 @@ export const FEATURES = {
     short: 'See how much of your daily limit is spent and how much is left.',
     long: 'Shows how much Kolo has spent from your own wallet today, how much of your daily limit is left, and when it resets. The limit lives on the blockchain, so even Kolo cannot go over it.',
   },
+  topup: {
+    icon: '➕',
+    name: 'Top up',
+    say: '/topup [amount]',
+    short: 'Add money to your Kolo balance with your own Roqqu pay link.',
+    long: 'I DM you your own Roqqu pay link for the amount you choose. Once Roqqu confirms it, the money is in your Kolo balance, ready for dues on USSD or a cash-out. /balance shows what you have.',
+  },
   cashout: {
     icon: '💸',
     name: 'Cash out',
@@ -766,7 +829,7 @@ ${Object.values(FEATURES)
 Want more on one? Type /help [feature], e.g. /help split`
 
 // "/help split", "/help bill", "/help vote" → the feature they mean
-const ALIASES: Record<string, Feature> = { withdrawal: 'cashout', cash: 'cashout', pot: 'spend', treasury: 'spend', withdraw: 'spend', bill: 'split', share: 'split', vote: 'poll', voting: 'poll', account: 'join', wallet: 'join', send: 'pay', collect: 'dues', collection: 'dues', reminder: 'remind', progress: 'status' }
+const ALIASES: Record<string, Feature> = { fund: 'topup', deposit: 'topup', balance: 'topup', withdrawal: 'cashout', cash: 'cashout', pot: 'spend', treasury: 'spend', withdraw: 'spend', bill: 'split', share: 'split', vote: 'poll', voting: 'poll', account: 'join', wallet: 'join', send: 'pay', collect: 'dues', collection: 'dues', reminder: 'remind', progress: 'status' }
 function featureFor(word: string): Feature | undefined {
   const w = word.trim().toLowerCase().replace(/^\//, '').split(/\s+/)[0]
   if (!w) return undefined
