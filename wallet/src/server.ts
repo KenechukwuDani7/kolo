@@ -199,7 +199,11 @@ createServer(async (req, res) => {
     try {
       const { address } = await readBody(req)
       const w = wallets.get(String(address).toLowerCase())
-      if (!w) throw new Error('no Kolo wallet with that address')
+      if (!w) {
+        // Not made on this network (e.g. before a move): Kolo holds no permission to revoke.
+        res.writeHead(200, { 'content-type': 'application/json' }).end(toJson({ revoked: null }))
+        return
+      }
       const tx = await revokeAsSpender(w.permission)
       wallets.delete(String(address).toLowerCase())
       saveWallets()

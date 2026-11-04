@@ -47,8 +47,9 @@ export type Payments = {
 // Reads a member's passkey wallet: how much of today's limit is spent and left (on-chain).
 export type WalletInfo = {
   usage(address: string): Promise<{ used: number; limit: number; left: number; resetsAt: number }>
-  // Kolo gives up its spending permission on this wallet, on-chain. Returns a tx link.
-  revoke(address: string): Promise<string>
+  // Kolo gives up its spending permission on this wallet, on-chain. Returns a tx link,
+  // or null when Kolo holds no permission for it (nothing to cancel).
+  revoke(address: string): Promise<string | null>
 }
 
 // A spend from the pot waiting on the group's vote.
@@ -341,6 +342,8 @@ export class Kolo {
       case 'balance':
         return [this.text(msg, `${msg.sender.name}, your Kolo balance is ${naira(this.balanceOf(msg.sender.id))}. Add money with ${FEATURES.topup.say}`)]
       case '':
+      case 'kolo': // "/kolo" on its own: show the menu
+      case 'menu':
       case 'help': {
         const topic = featureFor(args.join(' '))
         return [this.text(msg, topic ? explain(topic) : HELP)]
@@ -645,7 +648,7 @@ export class Kolo {
     const balance = this.balanceOf(msg.sender.id)
     if (balance > 0) return [this.text(msg, `You have ${naira(balance)} in your Kolo balance now. Cash it out first, then try again.`)]
     const wallet = this.wallets.get(msg.sender.id)
-    let revoked = ''
+    let revoked: string | null = null
     if (wallet) {
       if (!this.walletInfo) return [this.text(msg, "I can't reach the wallet service right now, so nothing was deleted. Try again soon.")]
       try {
@@ -664,7 +667,13 @@ export class Kolo {
     return [
       this.text(
         msg,
-        `Done, ${msg.sender.name}. Your Kolo account is deleted.${wallet ? ` I can no longer spend from your wallet ${wallet.slice(0, 6)}…${wallet.slice(-4)}; that's now recorded on the blockchain. The wallet is still yours.` : ''} You can come back anytime with /join.`,
+        `Done, ${msg.sender.name}. Your Kolo account is deleted.${
+          wallet
+            ? revoked
+              ? ` I can no longer spend from your wallet ${wallet.slice(0, 6)}…${wallet.slice(-4)}; that's now recorded on the blockchain. The wallet is still yours.`
+              : ` I had no spending permission left on your wallet ${wallet.slice(0, 6)}…${wallet.slice(-4)}, so there was nothing to cancel. The wallet is still yours.`
+            : ''
+        } You can come back anytime with /join.`,
       ),
     ]
   }
