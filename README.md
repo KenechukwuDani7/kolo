@@ -38,6 +38,16 @@ Wallet test: see [`wallet/README.md`](wallet/README.md).
 
 Public demo links (free, no account): with the bot on :3117 and the wallet on :3116, run `node scripts/tunnels.mjs path/to/cloudflared`. It opens Cloudflare quick tunnels, prints the wallet link and the USSD phone link, and the bot switches its `/join` links to the public wallet page. The WhatsApp login page is never served through the public link.
 
+
+## Live deployment
+
+Kolo runs 24/7 on an Oracle Cloud Always Free server (Ubuntu 24.04, Arm), so it works without anyone's laptop:
+
+- Wallet sign-up: https://wallet.84-12-109-77.sslip.io (`/join` links point here)
+- USSD phone: https://kolo.84-12-109-77.sslip.io/ussd
+
+Three systemd services (`kolo-fork`, `kolo-wallet`, `kolo-bot`) restart on their own, and Caddy serves HTTPS with free Let's Encrypt certificates. To set up a new server: install Node 22 and Caddy, allow ports 80 and 443 (cloud firewall and the server's iptables), copy the code, then run `IP_DASHED=<ip-with-dashes> bash scripts/server-setup.sh`. The bot's `.env`, WhatsApp login (`bot/auth`) and state (`bot/data`) are copied separately and never committed. The WhatsApp login page is only served to localhost; use an SSH tunnel to reach it.
+
 ## Team
 
 - Kenechukwu Okoye (Koda), team lead: product, design and backend
