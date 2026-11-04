@@ -652,6 +652,7 @@ export type Feature = keyof typeof FEATURES
 
 const HELP = `I keep track of your group's money so nobody has to chase anybody.
 Talk to me normally, starting with "Kolo", or use a shortcut. [brackets] are what you fill in.
+➕ Want me in another group? Save my number and add me like any member.
 
 ${Object.values(FEATURES)
   .map((f) => `${f.icon} *${f.name}*\n   ${f.say}\n   _${f.short}_`)

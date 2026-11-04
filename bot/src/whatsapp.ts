@@ -95,6 +95,9 @@ const phoneDigits = (raw: string) => {
   return d.length === 11 && d.startsWith('0') ? `234${d.slice(1)}` : d // 0803… → 234803…
 }
 
+// How far back Kolo answers messages it missed while offline.
+const CATCH_UP_MS = Number(process.env.CATCH_UP_MINUTES ?? 15) * 60_000
+
 // Set by start(): sends Kolo's actions on the live socket (it changes on reconnect).
 let performNow: ((actions: Action[]) => Promise<void>) | undefined
 
@@ -335,8 +338,12 @@ async function start() {
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     for (const msg of messages) {
+      // Messages that arrived while Kolo was offline (a restart, a network drop) come in as
+      // 'append'. Answer the recent ones so nobody is ignored; skip anything older.
+      const ageMs = Date.now() - Number(msg.messageTimestamp ?? 0) * 1000
+      const missedRecently = type === 'append' && ageMs < CATCH_UP_MS
       // Messages typed on the account's own phone can arrive as 'append' rather than 'notify'.
-      if (type !== 'notify' && !(msg.key.fromMe && process.env.TEST_OWN_MESSAGES)) continue
+      if (type !== 'notify' && !missedRecently && !(msg.key.fromMe && process.env.TEST_OWN_MESSAGES)) continue
       try {
         if (!msg.message || !allowedIds.has(msg.key.remoteJid ?? '')) continue
         const content = normalizeMessageContent(msg.message)
@@ -348,7 +355,8 @@ async function start() {
           continue
         }
         const text = content?.conversation ?? content?.extendedTextMessage?.text
-        if (!text) continue
+        // Never answer one of Kolo's own messages (after a restart their ids are forgotten).
+        if (!text || text.startsWith('🐷 *Kolo*')) continue
         const chatId = msg.key.remoteJid!
         const group = !!isJidGroup(chatId)
         const mentioned = content?.extendedTextMessage?.contextInfo?.mentionedJid ?? []

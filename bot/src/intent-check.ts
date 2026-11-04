@@ -39,6 +39,8 @@ const cases: [string, Expect][] = [
   ['make the pot pay clint 3k for printing', { action: 'spend', amount: 3000, people: ['Clinton'] }],
   ['abeg send Ada 2k from my account', { action: 'pay', amount: 2000, people: ['Ada'] }],
   ['how does the pot thing work?', { action: 'help' }],
+  ['How does one get you in the group in the first place?', { action: 'chat' }],
+  ['Kolo I need make you give me money', { action: 'chat' }],
 ]
 
 const same = (a: string[], b: string[]) => a.length === b.length && [...a].sort().every((x, i) => x.toLowerCase() === [...b].sort()[i].toLowerCase())
