@@ -95,6 +95,28 @@ export async function deposits(): Promise<Deposit[]> {
   return rows.map((r) => ({ address: String(r.address).toLowerCase(), value: Number(r.value), token: r.token, network: r.network, hash: r.tx_hash, createdAt: r.created_at }))
 }
 
+// A deposit address on Roqqu for one customer (a group member), so the pot can pay them.
+export async function generateWallet(network: string, customer: { email: string; name: string }): Promise<string> {
+  const firstName = customer.name.replace(/[^\p{L}\s]/gu, '').trim().split(/\s+/)[0] || 'Kolo'
+  const data = await call<{ address: string }>('POST', '/wallets/generate-wallet', {
+    network,
+    customer: JSON.stringify({ email: customer.email, first_name: firstName, last_name: 'Kolo' }),
+  })
+  return data.address
+}
+
+// Send from the merchant balance. Queued: the token_sent webhook confirms it on-chain later.
+// USDT goes out on trc20 or bep20, at least 1 USDT; the fee comes out of the amount sent.
+export async function send(opts: { amount: number; token: string; network: string; to: string }): Promise<string> {
+  const data = await call<{ refid: string }>('POST', '/wallets/send', {
+    amount: String(opts.amount),
+    token: opts.token,
+    network: opts.network,
+    to: opts.to,
+  })
+  return data.refid
+}
+
 export async function nairaPerDollar(): Promise<number> {
   const rates = await call<{ symbol: string; rate: number }[]>('GET', '/rates')
   return rates.find((r) => r.symbol === 'ngn')?.rate ?? 0

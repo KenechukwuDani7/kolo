@@ -1,7 +1,8 @@
-# Kolo WhatsApp group bot spike (throwaway, not the hackathon repo)
+# Kolo WhatsApp group bot
 
-Proves whether a bot can live inside a normal WhatsApp group: read messages, reply, @mention people,
-post images, run polls and read the votes, and DM members. Not under git on purpose.
+Kolo lives inside a normal WhatsApp group. It reads messages addressed to it, collects dues through personal
+Roqqu pay links, ticks people off when Roqqu confirms the money, splits bills, reminds people, and lets the
+group vote before anything is spent from the shared pot.
 
 ## Why not the official API
 Meta's WhatsApp Groups API (Cloud API) only allows **8 participants per group** and requires an
@@ -16,12 +17,16 @@ and say so if judges ask. Telegram (full group-bot support) stays the fallback.
 | `src/kolo.ts` | Kolo's chat logic. Knows nothing about WhatsApp, so Telegram can reuse it. |
 | `src/cards.ts` | The dues progress card (SVG → PNG). Swap in Ike's Figma design later. |
 | `src/simulate.ts` | Scripted group chat with no phone needed. Cards are saved to `out/`. |
-| `src/whatsapp.ts` | Baileys adapter: login, group messages, mentions, images, polls, vote decryption, DMs. |
+| `src/whatsapp.ts` | Baileys adapter: login, group messages, mentions, images, polls, vote decryption, DMs, Roqqu payment watch and webhook. |
+| `src/roqqu.ts` | Roqqu RAS client: payment links, deposits, member wallets, sends, naira rate, webhook decryption. |
+| `src/intent.ts` | AI message reader (English and Pidgin) that turns a message into one structured request. |
+| `src/roqqu-check.ts` | Live check against the Roqqu sandbox. |
 
 ## Run
 ```bash
 npm install
 npm run simulate                              # no phone needed
+npm run simulate -- --pay                     # with pay links, confirmations and a pot spend
 PAIR_NUMBER=2348012345678 npm run whatsapp    # link the spare number with an 8-character code
 npm run whatsapp                              # or link by scanning a QR code
 ```
@@ -42,8 +47,10 @@ Add the spare number to a test group with 2–3 friends, then try:
 |---|---|---|
 | 1 | `lol who dey go library` | Kolo stays silent |
 | 2 | `/help` | List of commands |
-| 3 | `/dues 2000 CSC 301 project fund` | Green progress card image |
-| 4 | Each friend sends `paid` | Card updates: 1/N, 2/N… |
+| 3 | `/dues 2000 CSC 301 project fund` | Progress card, and each member gets a Roqqu pay link by DM |
+| 4 | Open your link, pick USDT, tap **Completed** (sandbox) | Within ~15 s: "X paid ✅ (confirmed by Roqqu)" and the card updates |
+| 4b | Organiser: `/confirm @name` | Ticks someone who paid cash; nobody else can do this |
+| 4c | `/spend 1500 @name printing`, then the group votes | Majority yes → Kolo pays them from the pot through Roqqu and posts a receipt |
 | 5 | `@Kolo split 12k shawarma between me @Ada @Chidi` (real @mentions) | Shares posted, mentions highlighted, DMs to Ada and Chidi |
 | 6 | `/poll Invest ₦50,000 in MTN stock?` then everyone votes | A WhatsApp poll; Kolo reports Yes/No counts, then "Approved" at 3 yes |
 | 7 | Someone changes their vote | Counts update |
@@ -59,7 +66,7 @@ it (unknown names, missing amounts, who is actually in the group) and acts. `/co
 - Credentials: `.env` (`AWS_BEARER_TOKEN_BEDROCK`, `AWS_REGION`, `KOLO_MODEL`). Never commit it.
 - Haiku 4.5 is an ARN-versioned Bedrock model, so the client pins `anthropic-version: bedrock-2023-05-31`;
   the SDK default (`2026-10-21`) returns 400 "Invalid API version".
-- `npx tsx src/intent-check.ts` scores the reader on 20 realistic English/Pidgin messages: **20/20** (26 Oct).
+- `npx tsx src/intent-check.ts` scores the reader on 20 realistic English/Pidgin messages: **25/25** (27 Oct), now 29 cases with "spend from the pot".
 - `npm run simulate -- --ai` plays a full group chat through the real reader.
 - Latency was 6–13 s per message, but that is this laptop's network (a TLS handshake took 5–10 s even to
   Google). Run the bot on a cloud server for the demo.

@@ -10,7 +10,10 @@ const useAi = process.argv.includes('--ai')
 const reader: Reader | undefined = useAi ? (await import('./intent.js')).readIntent : undefined
 const usePay = process.argv.includes('--pay')
 const payments: Payments | undefined = usePay
-  ? { link: async ({ member }) => ({ reference: `SIM${member.id.toUpperCase()}`, url: `https://checkout-sandbox.roqqu.io/?refId=sim-${member.id}` }) }
+  ? {
+      link: async ({ member }) => ({ reference: `SIM${member.id.toUpperCase()}`, url: `https://checkout-sandbox.roqqu.io/?refId=sim-${member.id}` }),
+      payout: async ({ amount }) => ({ reference: 'SIMPAYOUT1', sent: `${(amount / 1375).toFixed(2)} USDT on BSC` }),
+    }
   : undefined
 const kolo = new Kolo(reader, payments)
 const group = 'class-group'
@@ -35,13 +38,13 @@ async function say(from: Person, text: string, mentions: Person[] = []) {
   show(await kolo.handle(msg))
 }
 
-function vote(from: Person, pollId: string, option: 'Yes' | 'No') {
+async function vote(from: Person, pollId: string, option: 'Yes' | 'No') {
   console.log(`\n${people[from]} votes ${option}`)
   // Changing a vote moves the voter, like WhatsApp polls do.
   const tally = (votes[pollId] ??= { Yes: [], No: [] })
   for (const key of Object.keys(tally)) tally[key] = tally[key].filter((id) => id !== from)
   tally[option].push(from)
-  show(kolo.handlePollTally(pollId, tally))
+  show(await kolo.handlePollTally(pollId, tally))
 }
 
 const indent = (s: string) => s.replace(/\n/g, '\n                ')
@@ -68,6 +71,12 @@ if (usePay) {
   show(kolo.confirmPayment('SIMCHIDI')) // a repeat confirmation does nothing
   await say('ada', '/confirm @Tobe', ['tobe']) // only the organiser may
   await say('chinedu', '/confirm @Tobe', ['tobe'])
+  await say('ada', '/spend 20k @Chidi projector', ['chidi']) // more than the pot holds
+  await say('ada', '/spend 5k @Chidi projector', ['chidi'])
+  await vote('ada', 'poll-1', 'Yes')
+  await vote('chinedu', 'poll-1', 'Yes')
+  await vote('tobe', 'poll-1', 'Yes') // already settled: nothing more happens
+  await say('chinedu', '/pot')
 } else {
   await say('ada', 'paid')
   await say('chidi', 'paid')
@@ -77,10 +86,11 @@ await say('chinedu', '/status')
 await say('chinedu', '/remind')
 await say('ada', '@Kolo split 12k shawarma between me @Chidi @Tobe', ['chidi', 'tobe'])
 await say('tobe', '/poll Invest ₦50,000 of the pot in MTN stock?')
-vote('ada', 'poll-1', 'Yes')
-vote('chidi', 'poll-1', 'No')
-vote('chidi', 'poll-1', 'Yes')
-vote('tobe', 'poll-1', 'Yes')
+const groupPoll = usePay ? 'poll-2' : 'poll-1' // the spend vote above is poll-1 in --pay mode
+await vote('ada', groupPoll, 'Yes')
+await vote('chidi', groupPoll, 'No')
+await vote('chidi', groupPoll, 'Yes')
+await vote('tobe', groupPoll, 'Yes')
 await say('tobe', '/join')
 await say('ada', 'Kolo help')
 if (useAi) {

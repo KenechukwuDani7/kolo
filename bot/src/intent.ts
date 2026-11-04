@@ -13,16 +13,16 @@ try {
 
 export const Intent = z.object({
   action: z
-    .enum(['dues', 'paid', 'split', 'pay', 'poll', 'remind', 'status', 'join', 'help', 'chat'])
+    .enum(['dues', 'paid', 'split', 'pay', 'spend', 'poll', 'remind', 'status', 'join', 'help', 'chat'])
     .describe('The single thing the sender wants Kolo to do'),
   amount: z.number().nullable().describe('Amount in naira as a plain number (2k → 2000), or null'),
-  title: z.string().nullable().describe('What the money is for, e.g. "CSC 301 project fund" or "shawarma", or null'),
+  title: z.string().nullable().describe('What the money is for, e.g. "CSC 301 project fund", "shawarma" or "projector", or null'),
   people: z.array(z.string()).describe('Names of the OTHER people involved, exactly as listed in the group members, never the sender'),
   unknownNames: z.array(z.string()).describe('Names mentioned that are NOT group members, as written'),
   includeSender: z.boolean().describe('For split: true if the sender also shares the bill'),
   question: z.string().nullable().describe('For poll: the yes/no question, cleaned up, or null'),
   topic: z
-    .enum(['dues', 'paid', 'status', 'remind', 'split', 'pay', 'poll', 'join'])
+    .enum(['dues', 'paid', 'status', 'remind', 'split', 'pay', 'spend', 'poll', 'join'])
     .nullable()
     .describe('For help: the one feature they asked how to use, or null for a general "what can you do"'),
   reply: z
@@ -36,6 +36,7 @@ export type IntentContext = {
   sender: string
   members: string[]
   collection?: { title: string; amount: number; unpaid: string[] }
+  pot?: number // naira in the group pot
   // When the message is a reply to Kolo: what Kolo said, and the message Kolo was answering.
   replyingTo?: { kolo: string; asked?: string }
 }
@@ -49,12 +50,13 @@ Actions:
 - dues: start a group collection ("everybody drop 2k for project", "collect 1500 each for dinner")
 - paid: the sender says they have paid the current collection ("I don pay", "sent mine")
 - split: share a bill between people ("split 15k suya between me, Excel and Clinton"), or bill/charge someone for something the sender paid ("send Clinton the bill for shawarma", "Ada owes me 3k", "charge Excel for the uber"). When billing someone, includeSender is false and people is just them.
-- pay: send money to specific people ("abeg send Chidi 2k for data", "pay Ada back her 5k")
+- pay: the sender sends their OWN money to specific people ("abeg send Chidi 2k for data", "pay Ada back her 5k")
+- spend: pay someone out of the GROUP POT / treasury / the money we collected ("use 5k from the pot to pay Excel for the projector", "make the pot pay Clinton 3k for printing", "release 10k from our money give Ada for the venue"). people = who receives it, title = what it is for.
 - poll: start a yes/no group vote ("make we vote whether we go put 50k inside MTN")
 - remind: nudge people who haven't paid ("tell Clinton to pay up", "remind everybody wey never pay")
 - status: ask who has or hasn't paid, or how much is collected ("who never pay?", "how far the money?")
 - join: wants to set up or open their Kolo account / wallet
-- help: asks what Kolo can do, or how one feature works ("how does split work?", "explain the dues thing", "wetin be remind?"). Set topic to that feature, or null for a general question. Any "explain", "I don't understand", "how does … work" or "what is …" question about something Kolo does is help, never chat. Questions about sharing food, shawarma, suya, bills or rides mean topic split; about collecting or contributing mean dues; about voting mean poll; about the wallet or account mean join.
+- help: asks what Kolo can do, or how one feature works ("how does split work?", "explain the dues thing", "wetin be remind?"). Set topic to that feature, or null for a general question. Any "explain", "I don't understand", "how does … work" or "what is …" question about something Kolo does is help, never chat. Questions about sharing food, shawarma, suya, bills or rides mean topic split; about collecting or contributing mean dues; about voting mean poll; about the pot or spending group money mean spend; about the wallet or account mean join.
 - chat: anything else (greetings, jokes, football, questions unrelated to group money)
 
 Rules:
@@ -78,6 +80,7 @@ export async function readIntent(text: string, ctx: IntentContext): Promise<Inte
     ctx.collection
       ? `Current collection: "${ctx.collection.title}", ₦${ctx.collection.amount} each. Unpaid: ${ctx.collection.unpaid.join(', ') || 'nobody'}`
       : 'Current collection: none',
+    `Group pot: ₦${ctx.pot ?? 0}`,
     ...(ctx.replyingTo
       ? [
           `This message is a reply to Kolo, who had said: "${ctx.replyingTo.kolo}"`,

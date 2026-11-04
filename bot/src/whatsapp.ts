@@ -21,7 +21,7 @@ import makeWASocket, {
 import pino from 'pino'
 import qrcode from 'qrcode-terminal'
 import { Kolo, isAddressed, type Action, type Incoming, type Member, type Payments } from './kolo.js'
-import { createPaymentLink, decryptWebhook, deposits, roqquEnabled } from './roqqu.js'
+import { createPaymentLink, decryptWebhook, deposits, generateWallet, nairaPerDollar, roqquEnabled, send } from './roqqu.js'
 
 // The AI message reader is on when Bedrock credentials are present (.env), off otherwise.
 try {
@@ -34,6 +34,9 @@ const reader = process.env.AWS_BEARER_TOKEN_BEDROCK || process.env.AWS_ACCESS_KE
 // Roqqu pay links are on when a Roqqu test key is present (.env).
 // Pay links not yet confirmed: reference → the link's deposit addresses and when it was made.
 const pendingLinks = new Map<string, { addresses: string[]; since: number }>()
+// Each member's Roqqu USDT (BSC) address, made the first time the pot pays them.
+const payoutAddresses = new Map<string, string>()
+const emailFor = (member: Member) => `${member.id.split('@')[0].replace(/\D/g, '')}@kolo-demo.app`
 const payments: Payments | undefined = roqquEnabled
   ? {
       async link({ chatId, member, amount, title }) {
@@ -42,11 +45,25 @@ const payments: Payments | undefined = roqquEnabled
           amountNgn: amount,
           reference,
           name: member.name,
-          email: `${member.id.split('@')[0].replace(/\D/g, '')}@kolo-demo.app`,
+          email: emailFor(member),
           metadata: { group: chatId, member: member.id, title },
         })
         pendingLinks.set(link.reference, { addresses: link.addresses, since: Date.now() })
         return { reference: link.reference, url: link.url }
+      },
+      // The pot is held as USDT on Roqqu; convert the naira amount at Roqqu's live rate.
+      async payout({ member, amount }) {
+        const rate = await nairaPerDollar()
+        const usdt = Math.floor((amount / rate) * 100) / 100
+        if (usdt < 1) throw new Error(`Roqqu's smallest send is 1 USDT (about ₦${Math.ceil(rate).toLocaleString('en-NG')})`)
+        let to = payoutAddresses.get(member.id)
+        if (!to) {
+          to = await generateWallet('bep20', { email: emailFor(member), name: member.name })
+          payoutAddresses.set(member.id, to)
+        }
+        const reference = await send({ amount: usdt, token: 'usdt', network: 'bep20', to })
+        console.log(`payout ${usdt} USDT to ${member.name} (${to}), ref ${reference}`)
+        return { reference, sent: `${usdt} USDT on BSC at ₦${rate.toLocaleString('en-NG')}/$` }
       },
     }
   : undefined
@@ -238,7 +255,7 @@ async function start() {
         // phone are also fromMe; with TEST_OWN_MESSAGES=1 those are handled too.
         if (msg.key.fromMe && (sentIds.has(msg.key.id!) || !process.env.TEST_OWN_MESSAGES)) continue
         if (content?.pollUpdateMessage) {
-          await perform(onVote(msg, content.pollUpdateMessage))
+          await perform(await onVote(msg, content.pollUpdateMessage))
           continue
         }
         const text = content?.conversation ?? content?.extendedTextMessage?.text
@@ -271,7 +288,7 @@ async function start() {
     }
   })
 
-  function onVote(msg: WAMessage, update: proto.Message.IPollUpdateMessage): Action[] {
+  async function onVote(msg: WAMessage, update: proto.Message.IPollUpdateMessage): Promise<Action[]> {
     const creationId = update.pollCreationMessageKey?.id
     const poll = creationId ? polls.get(creationId) : undefined
     const secret = poll?.message.messageContextInfo?.messageSecret
@@ -291,6 +308,8 @@ async function start() {
           const tally: Record<string, string[]> = Object.fromEntries(poll.options.map((o) => [o, [] as string[]]))
           for (const [who, options] of poll.votes) for (const o of options) tally[o].push(who)
           console.log(`vote from ${voter}: ${chosen.join(', ') || '(removed)'}`)
+          // Returned, not awaited: a failure while paying out must not look like a failed
+          // decryption, or the next id combination would count the vote (and pay) again.
           return kolo.handlePollTally(poll.pollId, tally)
         } catch {
           // wrong id combination; try the next

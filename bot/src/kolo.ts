@@ -35,7 +35,12 @@ export type Reader = (text: string, ctx: IntentContext) => Promise<Intent>
 // adapter). Kolo is told about payments later through confirmPayment(reference).
 export type Payments = {
   link(opts: { chatId: string; member: Member; amount: number; title: string }): Promise<{ reference: string; url: string }>
+  // Pays a member out of the group pot; `sent` describes what actually moved ("3.63 USDT on BSC").
+  payout(opts: { chatId: string; member: Member; amount: number; purpose: string }): Promise<{ reference: string; sent: string }>
 }
+
+// A spend from the pot waiting on the group's vote.
+type Spend = { amount: number; to: Member; purpose: string; by: Member }
 
 type Collection = {
   title: string
@@ -45,13 +50,14 @@ type Collection = {
   paid: Map<string, string>
   links: Map<string, string> // member id → their pay link
 }
-type Poll = { chatId: string; question: string; needed: number; settled: boolean }
+type Poll = { chatId: string; question: string; needed: number; settled: boolean; spend?: Spend }
 
 const JOIN_URL = process.env.JOIN_URL ?? 'http://localhost:3116'
 const naira = (n: number) => `₦${n.toLocaleString('en-NG')}`
 // WhatsApp renders "@<number>" as the person's name when their id is in `mentions`.
 const tag = (m: Member) => `@${m.id.split('@')[0]}`
-const payLinkText = (m: Member, c: Collection, url: string) =>
+const potLine = (pot: number) => `🏦 Group pot: ${naira(pot)}`
+const payLinkText =(m: Member, c: Collection, url: string) =>
   `Hi ${m.name}! Your share of *${c.title}* is ${naira(c.amount)}.\nPay here (USDT or BTC, via Roqqu): ${url}\nI'll tick you in the group as soon as it lands.`
 
 // "2k", "12.5k", "₦2,000", "2000" → number of naira
@@ -74,6 +80,8 @@ export class Kolo {
   private pollCount = 0
   // Pay-link reference → whose share it pays.
   private references = new Map<string, { chatId: string; memberId: string }>()
+  // The group pot: naira collected and not yet spent, per chat.
+  private pots = new Map<string, number>()
 
   constructor(
     private read?: Reader,
@@ -87,6 +95,7 @@ export class Kolo {
     const member = c?.members.find((m) => m.id === ref!.memberId)
     if (!ref || !c || !member || c.paid.has(member.id)) return []
     c.paid.set(member.id, member.name)
+    this.credit(ref.chatId, c.amount)
     const done = c.paid.size === c.members.length ? '\n🎉 Everybody don pay!' : ''
     return [this.duesCard(ref.chatId, c, `${member.name} paid ✅ (confirmed by ${via})${done}`)].map(sign)
   }
@@ -100,8 +109,13 @@ export class Kolo {
   }
 
   // tally: option name → ids of everyone currently voting for it
-  handlePollTally(pollId: string, tally: Record<string, string[]>): Action[] {
-    return this.tallyPoll(pollId, tally).map(sign)
+  async handlePollTally(pollId: string, tally: Record<string, string[]>): Promise<Action[]> {
+    return (await this.tallyPoll(pollId, tally)).map(sign)
+  }
+
+  private pot = (chatId: string) => this.pots.get(chatId) ?? 0
+  private credit(chatId: string, amount: number) {
+    this.pots.set(chatId, this.pot(chatId) + amount)
   }
 
   private async respond(msg: Incoming): Promise<Action[]> {
@@ -141,6 +155,11 @@ export class Kolo {
         return this.join(msg)
       case 'confirm':
         return this.confirmByHand(msg)
+      case 'spend':
+        // "/spend 5k @Excel projector"
+        return this.startSpend(msg, parseAmount(args[0] ?? ''), msg.mentions, args.slice(1).filter((w) => !w.startsWith('@')).join(' '))
+      case 'pot':
+        return [this.text(msg, potLine(this.pot(msg.chatId)))]
       case '':
       case 'help': {
         const topic = featureFor(args.join(' '))
@@ -166,6 +185,9 @@ export class Kolo {
         return this.pay(msg, intent.amount ?? undefined, people, unknown)
       case 'poll':
         return this.startPoll(msg, intent.question ?? '')
+      case 'spend':
+        if (unknown.length) return [this.askWho(msg, unknown)]
+        return this.startSpend(msg, intent.amount ?? undefined, people, intent.title ?? '')
       case 'remind':
         return this.remind(msg, people.length ? people : undefined)
       case 'status':
@@ -186,6 +208,7 @@ export class Kolo {
       sender: msg.sender.name,
       members: [msg.sender.name, ...msg.members.filter((m) => m.id !== msg.sender.id).map((m) => m.name)],
       collection: c && { title: c.title, amount: c.amount, unpaid: this.unpaid(c).map((m) => m.name) },
+      pot: this.pot(msg.chatId),
       replyingTo: msg.replyTo,
     }
   }
@@ -250,6 +273,7 @@ export class Kolo {
       ]
     }
     collection.paid.set(msg.sender.id, msg.sender.name)
+    this.credit(msg.chatId, collection.amount)
     return [this.duesCard(msg.chatId, collection, `${msg.sender.name} paid ✅`)]
   }
 
@@ -261,6 +285,7 @@ export class Kolo {
     const who = msg.mentions.filter((m) => c.members.some((x) => x.id === m.id) && !c.paid.has(m.id))
     if (!who.length) return [this.text(msg, 'Tag who paid you directly, like: /confirm @Excel')]
     for (const m of who) c.paid.set(m.id, c.members.find((x) => x.id === m.id)!.name)
+    this.credit(msg.chatId, c.amount * who.length)
     return [this.duesCard(msg.chatId, c, `${who.map((m) => c.paid.get(m.id)).join(', ')} paid ✅ (confirmed by ${c.organiser.name})`)]
   }
 
@@ -287,7 +312,7 @@ export class Kolo {
     return [
       this.text(
         msg,
-        `📊 *${c.title}* · ${naira(c.amount)} each\n${c.paid.size}/${c.members.length} paid · ${naira(c.paid.size * c.amount)} collected\n✅ ${paid.join(', ') || 'nobody yet'}\n⏳ ${unpaid.map((m) => m.name).join(', ') || 'nobody'}`,
+        `📊 *${c.title}* · ${naira(c.amount)} each\n${c.paid.size}/${c.members.length} paid · ${naira(c.paid.size * c.amount)} collected\n✅ ${paid.join(', ') || 'nobody yet'}\n⏳ ${unpaid.map((m) => m.name).join(', ') || 'nobody'}\n${potLine(this.pot(msg.chatId))}`,
       ),
     ]
   }
@@ -349,14 +374,54 @@ export class Kolo {
     return [{ type: 'poll', chatId: msg.chatId, pollId, question: `${question} (needs ${needed} yes)`, options: ['Yes', 'No'] }]
   }
 
-  private tallyPoll(pollId: string, tally: Record<string, string[]>): Action[] {
+  // "Spend 5k from the pot on a projector, pay Excel": the money only moves if the group votes yes.
+  private startSpend(msg: Incoming, amount: number | undefined, to: Member[], purpose: string): Action[] {
+    if (!to.length) return [this.text(msg, `Who should the pot pay? Tag them with @.\nSay it like: ${FEATURES.spend.say}`)]
+    if (to.length > 1) return [this.text(msg, 'One person per spend, so the receipt is clear. Ask again for each person.')]
+    if (!amount) return [this.text(msg, `How much from the pot?\nSay it like: ${FEATURES.spend.say}`)]
+    const pot = this.pot(msg.chatId)
+    if (amount > pot) return [this.text(msg, `The pot only has ${naira(pot)}, so I can't spend ${naira(amount)}. Collect more with /dues first.`)]
+    const spend: Spend = { amount, to: to[0], purpose: purpose || 'group expense', by: msg.sender }
+    const pollId = `poll-${++this.pollCount}`
+    // A spend needs a majority of the group, the person asking included.
+    const needed = Math.floor(Math.max(msg.members.length, 1) / 2) + 1
+    const question = `Spend ${naira(amount)} from the pot: pay ${spend.to.name} for ${spend.purpose}?`
+    this.polls.set(pollId, { chatId: msg.chatId, question, needed, settled: false, spend })
+    return [
+      this.text(msg, `🗳️ ${msg.sender.name} wants to spend ${naira(amount)} of the pot (${naira(pot)}). The group decides: ${needed} yes and I pay ${spend.to.name} straight away.`),
+      { type: 'poll', chatId: msg.chatId, pollId, question: `${question} (needs ${needed} yes)`, options: ['Yes', 'No'] },
+    ]
+  }
+
+  private async paySpend(poll: Poll, spend: Spend, yes: number): Promise<Action[]> {
+    const say = (text: string): Action[] => [{ type: 'text', chatId: poll.chatId, text }]
+    const pot = this.pot(poll.chatId)
+    if (spend.amount > pot) return say(`✅ Approved, but the pot now has only ${naira(pot)}. Nothing was sent.`)
+    if (!this.payments) {
+      this.pots.set(poll.chatId, pot - spend.amount)
+      return say(`✅ Approved ${yes}/${poll.needed}. ${naira(spend.amount)} paid to ${spend.to.name} for ${spend.purpose} (test mode, no money moved).\n${potLine(this.pot(poll.chatId))}`)
+    }
+    try {
+      const { reference, sent } = await this.payments.payout({ chatId: poll.chatId, member: spend.to, amount: spend.amount, purpose: spend.purpose })
+      this.pots.set(poll.chatId, pot - spend.amount)
+      return say(
+        `✅ Approved ${yes}/${poll.needed}. Paid!\n🧾 *Receipt*\n${naira(spend.amount)} (${sent}) → ${spend.to.name}\nFor: ${spend.purpose}\nAsked by: ${spend.by.name}\nRoqqu ref: ${reference}\n${potLine(this.pot(poll.chatId))}`,
+      )
+    } catch (error) {
+      console.error('payout failed:', error)
+      return say(`✅ Approved, but Roqqu couldn't send it: ${(error as Error).message}. The pot is unchanged (${naira(pot)}).`)
+    }
+  }
+
+  private async tallyPoll(pollId: string, tally: Record<string, string[]>): Promise<Action[]> {
     const poll = this.polls.get(pollId)
     if (!poll || poll.settled) return []
     const yes = tally['Yes']?.length ?? 0
     const no = tally['No']?.length ?? 0
     if (yes >= poll.needed) {
       poll.settled = true
-      return [{ type: 'text', chatId: poll.chatId, text: `✅ Approved ${yes}/${poll.needed}: "${poll.question}"\n(In the real build the group treasury executes this on-chain now.)` }]
+      if (poll.spend) return this.paySpend(poll, poll.spend, yes)
+      return [{ type: 'text', chatId: poll.chatId, text: `✅ Approved ${yes}/${poll.needed}: "${poll.question}"` }]
     }
     if (no >= poll.needed) {
       poll.settled = true
@@ -442,6 +507,13 @@ export const FEATURES = {
     short: 'Starts a yes/no vote. It passes at 3 yes.',
     long: 'For decisions about group money, like spending from the pot or investing it. I post a WhatsApp poll and announce the result when it reaches 3 yes (or 3 no).',
   },
+  spend: {
+    icon: '🏦',
+    name: 'Spend from the pot',
+    say: '/spend [amount] @[name] [what for]',
+    short: 'Pay someone from the group pot. The group votes first.',
+    long: 'Money everyone paid in sits in the group pot, not in anybody\'s personal account. To spend it, ask me who to pay, how much and what for. I start a vote, and only when the majority says yes do I pay them through Roqqu and post a receipt. /pot shows what is in it.',
+  },
   join: {
     icon: '🔐',
     name: 'Your Kolo account',
@@ -462,7 +534,7 @@ ${Object.values(FEATURES)
 Want more on one? Type /help [feature], e.g. /help split`
 
 // "/help split", "/help bill", "/help vote" → the feature they mean
-const ALIASES: Record<string, Feature> = { bill: 'split', share: 'split', vote: 'poll', voting: 'poll', account: 'join', wallet: 'join', send: 'pay', collect: 'dues', collection: 'dues', reminder: 'remind', progress: 'status' }
+const ALIASES: Record<string, Feature> = { pot: 'spend', treasury: 'spend', withdraw: 'spend', bill: 'split', share: 'split', vote: 'poll', voting: 'poll', account: 'join', wallet: 'join', send: 'pay', collect: 'dues', collection: 'dues', reminder: 'remind', progress: 'status' }
 function featureFor(word: string): Feature | undefined {
   const w = word.trim().toLowerCase().replace(/^\//, '').split(/\s+/)[0]
   if (!w) return undefined
