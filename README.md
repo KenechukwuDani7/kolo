@@ -39,5 +39,3 @@ Wallet test: see [`wallet/README.md`](wallet/README.md).
 - Kenechukwu Okoye, team lead, product and design
 - Ikenna Excel Ikueze
 - Clinton
-- Ginaa
-- Sage Clinton
