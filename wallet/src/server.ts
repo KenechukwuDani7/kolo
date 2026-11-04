@@ -32,6 +32,24 @@ const page = () => readFileSync(new URL('../public/index.html', import.meta.url)
 
 // One demo user at a time is enough for a spike.
 let permission: SpendPermission | undefined
+// The /join token from the user's WhatsApp DM, so Kolo knows whose wallet this is.
+let joinToken: string | undefined
+const BOT_URL = process.env.KOLO_BOT_URL ?? 'http://localhost:3117'
+
+// Tell the WhatsApp bot the wallet is ready; it announces it in the group.
+async function tellKolo(address: Address) {
+  if (!joinToken) return false
+  try {
+    const res = await fetch(`${BOT_URL}/wallet/registered`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: joinToken, address, dailyLimit: `${formatEther(DAILY_CAP)} ETH` }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
 const chidi = privateKeyToAccount(generatePrivateKey()).address
 
 let payQueue: Promise<unknown> = Promise.resolve()
@@ -66,7 +84,8 @@ async function readBody(req: IncomingMessage) {
 }
 
 const routes: Record<string, (body: any) => Promise<unknown>> = {
-  async '/api/wallet'({ id, publicKey }: { id: string; publicKey: Hex }) {
+  async '/api/wallet'({ id, publicKey, token }: { id: string; publicKey: Hex; token?: string }) {
+    joinToken = token || undefined
     // The passkey's credential id + public key are all the backend ever sees.
     const passkey = toWebAuthnAccount({ credential: { id, publicKey } })
     const wallet = await toCoinbaseSmartAccount({ client: publicClient, owners: [passkey, SPEND_PERMISSION_MANAGER] })
@@ -89,7 +108,7 @@ const routes: Record<string, (body: any) => Promise<unknown>> = {
   async '/api/approve'({ signature }: { signature: Hex }) {
     if (!permission) throw new Error('create a wallet first')
     const approve = await approveWithSignature(permission, signature)
-    return { approve: link(approve.hash) }
+    return { approve: link(approve.hash), toldKolo: await tellKolo(permission.account) }
   },
 
   '/api/pay'() {

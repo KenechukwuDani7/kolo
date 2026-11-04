@@ -35,8 +35,9 @@ export type Reader = (text: string, ctx: IntentContext) => Promise<Intent>
 // adapter). Kolo is told about payments later through confirmPayment(reference).
 export type Payments = {
   link(opts: { chatId: string; member: Member; amount: number; title: string }): Promise<{ reference: string; url: string }>
-  // Pays a member out of the group pot; `sent` describes what actually moved ("3.63 USDT on BSC").
-  payout(opts: { chatId: string; member: Member; amount: number; purpose: string }): Promise<{ reference: string; sent: string }>
+  // Pays a member out of the group pot, or to `address` (their own wallet) on cash-out;
+  // `sent` describes what actually moved ("3.63 USDT on BSC").
+  payout(opts: { chatId: string; member: Member; amount: number; purpose: string; address?: string }): Promise<{ reference: string; sent: string }>
 }
 
 // A spend from the pot waiting on the group's vote.
@@ -85,6 +86,9 @@ export class Kolo {
   private pots = new Map<string, number>()
   // Each member's Kolo balance, used by USSD (prototype: everyone starts with demo credit).
   private balances = new Map<string, number>()
+  // /join links: one-time token → who asked, and each member's own passkey wallet address.
+  private joinTokens = new Map<string, { chatId: string; memberId: string; name: string }>()
+  private wallets = new Map<string, string>()
 
   // Everything Kolo must remember across restarts, as plain JSON.
   snapshot() {
@@ -93,6 +97,8 @@ export class Kolo {
       pots: [...this.pots],
       references: [...this.references],
       balances: [...this.balances],
+      joinTokens: [...this.joinTokens],
+      wallets: [...this.wallets],
     }
   }
 
@@ -101,6 +107,24 @@ export class Kolo {
     this.pots = new Map(s.pots)
     this.references = new Map(s.references)
     this.balances = new Map(s.balances ?? [])
+    this.joinTokens = new Map(s.joinTokens ?? [])
+    this.wallets = new Map(s.wallets ?? [])
+  }
+
+  // The wallet page finished: passkey created, wallet deployed, daily limit signed.
+  walletReady(token: string, address: string, dailyLimit: string): Action[] {
+    const who = this.joinTokens.get(token)
+    if (!who) return []
+    this.joinTokens.delete(token)
+    this.wallets.set(who.memberId, address)
+    const short = `${address.slice(0, 6)}…${address.slice(-4)}`
+    return [
+      {
+        type: 'text',
+        chatId: who.chatId,
+        text: `🔐 ${who.name} set up their own Kolo wallet (${short}).\nOnly ${who.name}'s fingerprint or face controls it, and Kolo can spend at most ${dailyLimit} a day from it.\nCash out to it anytime: /cashout [amount]`,
+      },
+    ].map(sign)
   }
 
   // ── USSD: the same group money, from any phone with no data ──
@@ -210,6 +234,8 @@ export class Kolo {
         return this.startSpend(msg, parseAmount(args[0] ?? ''), msg.mentions, args.slice(1).filter((w) => !w.startsWith('@')).join(' '))
       case 'pot':
         return [this.text(msg, potLine(this.pot(msg.chatId)))]
+      case 'cashout':
+        return this.cashout(msg, parseAmount(args[0] ?? ''))
       case '':
       case 'help': {
         const topic = featureFor(args.join(' '))
@@ -244,6 +270,8 @@ export class Kolo {
         return this.status(msg)
       case 'join':
         return this.join(msg)
+      case 'cashout':
+        return this.cashout(msg, intent.amount ?? undefined)
       case 'help':
         // Explanations come from FEATURES, never from the AI, so they are always accurate.
         return [this.text(msg, intent.topic ? explain(intent.topic) : HELP)]
@@ -406,10 +434,45 @@ export class Kolo {
   }
 
   private join(msg: Incoming): Action[] {
+    const existing = this.wallets.get(msg.sender.id)
+    if (existing) return [this.text(msg, `${msg.sender.name}, you already have a Kolo wallet (${existing.slice(0, 6)}…${existing.slice(-4)}) ✅`)]
+    // A one-time token ties the wallet page back to this person and group.
+    const token = crypto.randomUUID().replace(/-/g, '')
+    this.joinTokens.set(token, { chatId: msg.chatId, memberId: msg.sender.id, name: msg.sender.name })
     return [
-      { type: 'dm', userId: msg.sender.id, text: `Hi ${msg.sender.name}! Tap to set up your Kolo account (takes 20 seconds): ${JOIN_URL}` },
+      {
+        type: 'dm',
+        userId: msg.sender.id,
+        text: `Hi ${msg.sender.name}! Tap to set up your own Kolo wallet with your fingerprint or face (about 20 seconds): ${JOIN_URL}/?t=${token}\nNo password, no seed phrase. Only your device can approve big payments.`,
+      },
       this.text(msg, `📩 ${msg.sender.name}, I've sent you a private link.`),
     ]
+  }
+
+  // Move money from your Kolo balance to your own passkey wallet, through Roqqu.
+  private async cashout(msg: Incoming, amount: number | undefined): Promise<Action[]> {
+    const address = this.wallets.get(msg.sender.id)
+    if (!address) return [this.text(msg, `Set up your own Kolo wallet first with /join, then cash out to it.`)]
+    if (!amount) return [this.text(msg, `How much? Say it like: ${FEATURES.cashout.say}`)]
+    const balance = this.balanceOf(msg.sender.id)
+    if (amount > balance) return [this.text(msg, `Your Kolo balance is ${naira(balance)}, so you can't cash out ${naira(amount)}.`)]
+    if (!this.payments) {
+      this.balances.set(msg.sender.id, balance - amount)
+      return [this.text(msg, `💸 ${naira(amount)} sent to your wallet (test mode, no money moved). Balance: ${naira(balance - amount)}`)]
+    }
+    try {
+      const { reference, sent } = await this.payments.payout({ chatId: msg.chatId, member: msg.sender, amount, purpose: 'cash-out', address })
+      this.balances.set(msg.sender.id, balance - amount)
+      return [
+        this.text(
+          msg,
+          `💸 Cashed out ${naira(amount)} (${sent}) to your own wallet ${address.slice(0, 6)}…${address.slice(-4)}.\nRoqqu ref: ${reference}\nKolo balance left: ${naira(balance - amount)}`,
+        ),
+      ]
+    } catch (error) {
+      console.error('cash-out failed:', error)
+      return [this.text(msg, `Roqqu couldn't send it: ${(error as Error).message}. Your balance is unchanged.`)]
+    }
   }
 
   private askWho(msg: Incoming, names: string[]): Action {
@@ -568,8 +631,15 @@ export const FEATURES = {
     icon: '🔐',
     name: 'Your Kolo account',
     say: '/join',
-    short: 'Get your private link to set up your Kolo wallet.',
+    short: 'Get your private link to set up your own Kolo wallet with your fingerprint or face.',
     long: 'Sets up your own Kolo wallet. It is protected by your phone\'s fingerprint or face unlock, and nobody else, not even Kolo, can spend more than the limit you choose.',
+  },
+  cashout: {
+    icon: '💸',
+    name: 'Cash out',
+    say: '/cashout [amount]',
+    short: 'Move money from your Kolo balance to your own wallet.',
+    long: 'Sends money from your Kolo balance to the wallet only your fingerprint or face controls, through Roqqu. Set the wallet up first with /join.',
   },
 } as const
 export type Feature = keyof typeof FEATURES
@@ -584,7 +654,7 @@ ${Object.values(FEATURES)
 Want more on one? Type /help [feature], e.g. /help split`
 
 // "/help split", "/help bill", "/help vote" → the feature they mean
-const ALIASES: Record<string, Feature> = { pot: 'spend', treasury: 'spend', withdraw: 'spend', bill: 'split', share: 'split', vote: 'poll', voting: 'poll', account: 'join', wallet: 'join', send: 'pay', collect: 'dues', collection: 'dues', reminder: 'remind', progress: 'status' }
+const ALIASES: Record<string, Feature> = { withdrawal: 'cashout', cash: 'cashout', pot: 'spend', treasury: 'spend', withdraw: 'spend', bill: 'split', share: 'split', vote: 'poll', voting: 'poll', account: 'join', wallet: 'join', send: 'pay', collect: 'dues', collection: 'dues', reminder: 'remind', progress: 'status' }
 function featureFor(word: string): Feature | undefined {
   const w = word.trim().toLowerCase().replace(/^\//, '').split(/\s+/)[0]
   if (!w) return undefined

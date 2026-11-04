@@ -55,11 +55,12 @@ const payments: Payments | undefined = roqquEnabled
         return { reference: link.reference, url: link.url }
       },
       // The pot is held as USDT on Roqqu; convert the naira amount at Roqqu's live rate.
-      async payout({ member, amount }) {
+      async payout({ member, amount, address }) {
         const rate = await nairaPerDollar()
         const usdt = Math.floor((amount / rate) * 100) / 100
         if (usdt < 1) throw new Error(`Roqqu's smallest send is 1 USDT (about ₦${Math.ceil(rate).toLocaleString('en-NG')})`)
-        let to = payoutAddresses.get(member.id)
+        // Cash-out goes to the member's own passkey wallet (an EVM address, the same on BSC).
+        let to = address ?? payoutAddresses.get(member.id)
         if (!to) {
           to = await generateWallet('bep20', { email: emailFor(member), name: member.name })
           payoutAddresses.set(member.id, to)
@@ -171,6 +172,23 @@ createServer(async (req, res) => {
       return 'END Kolo is busy. Please try again.'
     })
     res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end(reply)
+    return
+  }
+  // The wallet page reports a finished /join: { token, address, dailyLimit }.
+  if (req.url === '/wallet/registered' && req.method === 'POST') {
+    let body = ''
+    for await (const chunk of req) body += chunk
+    try {
+      const { token, address, dailyLimit } = JSON.parse(body)
+      if (!/^0x[0-9a-fA-F]{40}$/.test(address)) throw new Error('bad address')
+      const actions = kolo.walletReady(String(token), address, String(dailyLimit))
+      if (!actions.length) throw new Error('unknown or used link')
+      await performNow?.(actions)
+      saveState()
+      res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}')
+    } catch (error) {
+      res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: (error as Error).message }))
+    }
     return
   }
   // Roqqu webhook (needs a public HTTPS address pointing here). Body: { hash }, iv in x-api-key.

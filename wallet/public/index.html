@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kolo Wallet Spike</title>
+<title>Kolo Wallet</title>
 <style>
   :root { --ink: #13201a; --muted: #55655c; --line: #dfe6e1; --brand: #0f7a4a; --bg: #f6f8f7; --card: #fff; --bad: #b3261e; }
   @media (prefers-color-scheme: dark) {
@@ -26,8 +26,8 @@
 </head>
 <body>
 <main>
-  <h1>Kolo wallet spike 🐷</h1>
-  <p class="sub">A real passkey on this device controls the wallet. The bot can only spend within the daily limit you approve.</p>
+  <h1>Your Kolo wallet 🐷</h1>
+  <p class="sub">Your fingerprint or face controls this wallet. No password, no seed phrase. Kolo can only spend within the daily limit you approve.</p>
 
   <div class="card">
     <h2>1. Create wallet</h2>
@@ -78,9 +78,11 @@
   $('create').onclick = once(async () => {
     $('log').textContent = ''
     try {
-      credential = await createWebAuthnCredential({ name: 'Kolo spike' })
+      credential = await createWebAuthnCredential({ name: 'Kolo wallet' })
       log(`passkey created: ${credential.id.slice(0, 16)}…`)
-      wallet = await api('/api/wallet', { id: credential.id, publicKey: credential.publicKey })
+      // The token from the WhatsApp /join link ties this wallet to you in the group.
+      const token = new URLSearchParams(location.search).get('t') || undefined
+      wallet = await api('/api/wallet', { id: credential.id, publicKey: credential.publicKey, token })
       log(`wallet ${wallet.address}`, 'ok')
       log(`deployed (Kolo paid gas): ${wallet.deploy}`)
       log(`funded: ${wallet.fund}`)
@@ -106,8 +108,9 @@
         primaryType: 'SpendPermission',
         message: { ...p, allowance: BigInt(p.allowance), salt: BigInt(p.salt) },
       })
-      const { approve } = await api('/api/approve', { signature })
+      const { approve, toldKolo } = await api('/api/approve', { signature })
       log(`daily limit approved with passkey: ${approve}`, 'ok')
+      if (toldKolo) log('✅ Kolo has told your WhatsApp group. You can close this page.', 'ok')
       $('pay').disabled = false
     } catch (e) { log(`error: ${e.message}`, 'bad') }
   })

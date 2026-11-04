@@ -9,7 +9,7 @@ Collecting dues today means dozens of bank transfers, screenshots, a list in som
 - **Split bills, remind people, check who has paid, and vote** on how the pot is spent, in plain English or Pidgin.
 - **No data? Dial USSD.** Pay your dues from any phone with a PIN, and the WhatsApp group sees it instantly.
 - Money sits in a **group pot**, never in someone's personal account, and leaves only when the **group votes yes**, with a receipt.
-- Each member's own **passkey wallet** (fingerprint or face) has a daily spending limit. Even Kolo can't move more than you allow.
+- `/join` sets up each member's own **passkey wallet** (fingerprint or face, no seed phrase) with a daily spending limit. Even Kolo can't move more than you allow, and `/cashout` sends your money there through Roqqu.
 
 Built for the Anambra Web3 Conference 3.0 hackathon (Roqqu track), November 2026.
 

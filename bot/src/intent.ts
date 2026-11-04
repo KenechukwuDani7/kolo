@@ -13,7 +13,7 @@ try {
 
 export const Intent = z.object({
   action: z
-    .enum(['dues', 'paid', 'split', 'pay', 'spend', 'poll', 'remind', 'status', 'join', 'help', 'chat'])
+    .enum(['dues', 'paid', 'split', 'pay', 'spend', 'cashout', 'poll', 'remind', 'status', 'join', 'help', 'chat'])
     .describe('The single thing the sender wants Kolo to do'),
   amount: z.number().nullable().describe('Amount in naira as a plain number (2k → 2000), or null'),
   title: z.string().nullable().describe('What the money is for, e.g. "CSC 301 project fund", "shawarma" or "projector", or null'),
@@ -22,7 +22,7 @@ export const Intent = z.object({
   includeSender: z.boolean().describe('For split: true if the sender also shares the bill'),
   question: z.string().nullable().describe('For poll: the yes/no question, cleaned up, or null'),
   topic: z
-    .enum(['dues', 'paid', 'status', 'remind', 'split', 'pay', 'spend', 'poll', 'join'])
+    .enum(['dues', 'paid', 'status', 'remind', 'split', 'pay', 'spend', 'cashout', 'poll', 'join'])
     .nullable()
     .describe('For help: the one feature they asked how to use, or null for a general "what can you do"'),
   reply: z
@@ -55,8 +55,9 @@ Actions:
 - poll: start a yes/no group vote ("make we vote whether we go put 50k inside MTN")
 - remind: nudge people who haven't paid ("tell Clinton to pay up", "remind everybody wey never pay")
 - status: ask who has or hasn't paid, or how much is collected ("who never pay?", "how far the money?")
+- cashout: move money from the sender's Kolo balance to their own wallet ("cash out 2k to my wallet", "withdraw my 5k")
 - join: wants to set up or open their Kolo account / wallet
-- help: asks what Kolo can do, or how one feature works ("how does split work?", "explain the dues thing", "wetin be remind?"). Set topic to that feature, or null for a general question. Any "explain", "I don't understand", "how does … work" or "what is …" question about something Kolo does is help, never chat. Questions about sharing food, shawarma, suya, bills or rides mean topic split; about collecting or contributing mean dues; about voting mean poll; about the pot or spending group money mean spend; about the wallet or account mean join.
+- help: asks what Kolo can do, or how one feature works ("how does split work?", "explain the dues thing", "wetin be remind?"). Set topic to that feature, or null for a general question. Any "explain", "I don't understand", "how does … work" or "what is …" question about something Kolo does is help, never chat. Questions about sharing food, shawarma, suya, bills or rides mean topic split; about collecting or contributing mean dues; about voting mean poll; about the pot or spending group money mean spend; about withdrawing or cashing out mean cashout; about the wallet or account mean join.
 - chat: anything else (greetings, jokes, football, questions unrelated to group money)
 
 Rules:

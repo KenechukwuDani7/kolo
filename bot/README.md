@@ -56,7 +56,8 @@ Add the spare number to a test group with 2–3 friends, then try:
 | 5 | `@Kolo split 12k shawarma between me @Ada @Chidi` (real @mentions) | Shares posted, mentions highlighted, DMs to Ada and Chidi |
 | 6 | `/poll Invest ₦50,000 in MTN stock?` then everyone votes | A WhatsApp poll; Kolo reports Yes/No counts, then "Approved" at 3 yes |
 | 7 | Someone changes their vote | Counts update |
-| 8 | `/join` | Private DM with the setup link |
+| 8 | `/join`, open the DM link on the laptop (wallet runs on :3116), create passkey, approve limit | Group gets "🔐 X set up their own Kolo wallet" |
+| 9 | `/cashout 2k` | Roqqu sends USDT to your own wallet address, with a receipt |
 
 Note anything that fails, especially **#5 (mentions)** and **#6–7 (poll votes)**. Those depend on how
 WhatsApp addresses people in groups (phone number vs. LID), which can only be checked on a real group.

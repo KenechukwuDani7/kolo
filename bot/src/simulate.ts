@@ -93,6 +93,15 @@ if (usePay) {
   await dial('3')
   await dial('1')
   await dial('', '2349999999999')
+  // Tobe sets up his own passkey wallet from the /join link, then cashes out to it.
+  await say('tobe', '/cashout 3k') // no wallet yet
+  await say('tobe', '/join')
+  const [token] = kolo.snapshot().joinTokens.find(([, who]) => who.memberId === 'tobe')!
+  console.log('\n[wallet page: passkey created, daily limit signed]')
+  show(kolo.walletReady(token, '0x1234567890abcdef1234567890abcdef12345678', '0.001 ETH'))
+  show(kolo.walletReady(token, '0x1234567890abcdef1234567890abcdef12345678', '0.001 ETH')) // a used link does nothing
+  await say('tobe', '/cashout 3k')
+  await say('tobe', '/cashout 50k') // more than his balance
 } else {
   await say('ada', 'paid')
   await say('chidi', 'paid')
