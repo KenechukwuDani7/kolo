@@ -1,0 +1,24 @@
+{
+  "name": "kolo-whatsapp-spike",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "simulate": "tsx src/simulate.ts",
+    "whatsapp": "tsx src/whatsapp.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@anthropic-ai/bedrock-sdk": "^1.1.0",
+    "@resvg/resvg-js": "^2.6.2",
+    "baileys": "^7.0.0-rc14",
+    "pino": "^10.4.0",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.7"
+  }
+}

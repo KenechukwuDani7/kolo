@@ -1,0 +1,10 @@
+node_modules/
+.env
+.env.*
+!.env.example
+# WhatsApp login session for the bot number
+bot/auth/
+bot/out/
+wallet/cache/
+wallet/artifacts/
+*.log
