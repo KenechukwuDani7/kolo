@@ -54,7 +54,7 @@ Wants=network-online.target
 User=ubuntu
 WorkingDirectory=/home/ubuntu/kolo/bot
 Environment=QR_PORT=3117
-Environment=KOLO_GROUPS=Kolo Test
+Environment="KOLO_GROUPS=Kolo Test"
 Environment=TEST_OWN_MESSAGES=1
 Environment=JOIN_URL=https://$WALLET_HOST
 Environment=WALLET_URL=http://localhost:3116
