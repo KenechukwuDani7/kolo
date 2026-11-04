@@ -88,6 +88,12 @@ const walletInfo: WalletInfo = {
     if (!res.ok) throw new Error(json.error)
     return json
   },
+  async revoke(address) {
+    const res = await fetch(`${WALLET_URL}/internal/revoke`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address }) })
+    const json = await res.json()
+    if (!res.ok) throw new Error(json.error)
+    return json.revoked
+  },
 }
 const kolo = new Kolo(reader, payments, walletInfo, ai?.translate)
 

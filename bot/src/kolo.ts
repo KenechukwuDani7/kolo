@@ -47,6 +47,8 @@ export type Payments = {
 // Reads a member's passkey wallet: how much of today's limit is spent and left (on-chain).
 export type WalletInfo = {
   usage(address: string): Promise<{ used: number; limit: number; left: number; resetsAt: number }>
+  // Kolo gives up its spending permission on this wallet, on-chain. Returns a tx link.
+  revoke(address: string): Promise<string>
 }
 
 // A spend from the pot waiting on the group's vote.
@@ -103,6 +105,8 @@ export class Kolo {
   private wallets = new Map<string, string>()
   // Who owns each wallet (member id → name and the group they joined from).
   private owners = new Map<string, { name: string; chatId: string }>()
+  // Members who asked to delete their account: member id → when the request expires.
+  private pendingDeletes = new Map<string, number>()
   // Each group's own Roqqu account address.
   private groupAccounts = new Map<string, string>()
 
@@ -332,6 +336,8 @@ export class Kolo {
         return this.limit(msg)
       case 'topup':
         return this.topup(msg, parseAmount(args[0] ?? ''))
+      case 'deleteaccount':
+        return /^yes$/i.test(args[0] ?? '') ? this.deleteAccount(msg) : this.askToDelete(msg)
       case 'balance':
         return [this.text(msg, `${msg.sender.name}, your Kolo balance is ${naira(this.balanceOf(msg.sender.id))}. Add money with ${FEATURES.topup.say}`)]
       case '':
@@ -374,6 +380,9 @@ export class Kolo {
         return this.limit(msg)
       case 'topup':
         return this.topup(msg, intent.amount ?? undefined)
+      case 'deleteaccount':
+        // The AI can only start a deletion; confirming always takes the exact command.
+        return this.askToDelete(msg)
       case 'balance':
         return [this.text(msg, `${msg.sender.name}, your Kolo balance is ${naira(this.balanceOf(msg.sender.id))}. Add money with ${FEATURES.topup.say}`)]
       case 'help':
@@ -609,6 +618,57 @@ export class Kolo {
     }
   }
 
+  // Step 1 of deleting: explain what happens and ask for the exact confirmation.
+  private askToDelete(msg: Incoming): Action[] {
+    const balance = this.balanceOf(msg.sender.id)
+    if (balance > 0) {
+      return [this.text(msg, `${msg.sender.name}, you still have ${naira(balance)} in your Kolo balance. Cash it out first with ${FEATURES.cashout.say}, then ask again, so none of your money is lost.`)]
+    }
+    this.pendingDeletes.set(msg.sender.id, Date.now() + 5 * 60_000)
+    const wallet = this.wallets.get(msg.sender.id)
+    return [
+      this.text(
+        msg,
+        `${msg.sender.name}, deleting your Kolo account will:\n• erase your name, balance record and wallet link from Kolo\n${wallet ? '• cancel my permission to spend from your wallet, on the blockchain\n' : ''}${wallet ? 'Your wallet itself stays yours, controlled by your fingerprint. ' : ''}Past group records (like dues you paid) stay so the group's books add up.\n\nTo confirm, type /deleteaccount yes within 5 minutes.`,
+      ),
+    ]
+  }
+
+  // Step 2: revoke Kolo's spending permission, then erase the member's data.
+  private async deleteAccount(msg: Incoming): Promise<Action[]> {
+    const asked = this.pendingDeletes.get(msg.sender.id)
+    if (!asked || asked < Date.now()) {
+      this.pendingDeletes.delete(msg.sender.id)
+      return [this.text(msg, `To delete your account, start with /deleteaccount first. I'll explain what happens, then you confirm.`)]
+    }
+    this.pendingDeletes.delete(msg.sender.id)
+    const balance = this.balanceOf(msg.sender.id)
+    if (balance > 0) return [this.text(msg, `You have ${naira(balance)} in your Kolo balance now. Cash it out first, then try again.`)]
+    const wallet = this.wallets.get(msg.sender.id)
+    let revoked = ''
+    if (wallet) {
+      if (!this.walletInfo) return [this.text(msg, "I can't reach the wallet service right now, so nothing was deleted. Try again soon.")]
+      try {
+        revoked = await this.walletInfo.revoke(wallet)
+      } catch (error) {
+        console.error('revoke failed:', error)
+        return [this.text(msg, `I couldn't cancel my spending permission on your wallet just now, so nothing was deleted. Try again soon.`)]
+      }
+    }
+    const id = msg.sender.id
+    this.wallets.delete(id)
+    this.owners.delete(id)
+    this.balances.delete(id)
+    for (const [token, who] of this.joinTokens) if (who.memberId === id) this.joinTokens.delete(token)
+    for (const [ref, r] of this.references) if (r.memberId === id && r.kind === 'topup') this.references.delete(ref)
+    return [
+      this.text(
+        msg,
+        `Done, ${msg.sender.name}. Your Kolo account is deleted.${wallet ? ` I can no longer spend from your wallet ${wallet.slice(0, 6)}…${wallet.slice(-4)}; that's now recorded on the blockchain. The wallet is still yours.` : ''} You can come back anytime with /join.`,
+      ),
+    ]
+  }
+
   // Move money from your Kolo balance to your own passkey wallet, through Roqqu.
   private async cashout(msg: Incoming, amount: number | undefined): Promise<Action[]> {
     const address = this.wallets.get(msg.sender.id)
@@ -808,6 +868,13 @@ export const FEATURES = {
     short: 'Add money to your Kolo balance with your own Roqqu pay link.',
     long: 'I DM you your own Roqqu pay link for the amount you choose. Once Roqqu confirms it, the money is in your Kolo balance, ready for dues on USSD or a cash-out. /balance shows what you have.',
   },
+  deleteaccount: {
+    icon: '🗑️',
+    name: 'Delete your account',
+    say: '/deleteaccount',
+    short: 'Erase your Kolo account. I ask you to confirm first.',
+    long: 'Erases your name, balance record and wallet link from Kolo, and cancels my permission to spend from your wallet on the blockchain. Your wallet itself stays yours. Cash out any balance first. Past group records stay so the books add up.',
+  },
   cashout: {
     icon: '💸',
     name: 'Cash out',
@@ -829,7 +896,7 @@ ${Object.values(FEATURES)
 Want more on one? Type /help [feature], e.g. /help split`
 
 // "/help split", "/help bill", "/help vote" → the feature they mean
-const ALIASES: Record<string, Feature> = { fund: 'topup', deposit: 'topup', balance: 'topup', withdrawal: 'cashout', cash: 'cashout', pot: 'spend', treasury: 'spend', withdraw: 'spend', bill: 'split', share: 'split', vote: 'poll', voting: 'poll', account: 'join', wallet: 'join', send: 'pay', collect: 'dues', collection: 'dues', reminder: 'remind', progress: 'status' }
+const ALIASES: Record<string, Feature> = { delete: 'deleteaccount', leave: 'deleteaccount', fund: 'topup', deposit: 'topup', balance: 'topup', withdrawal: 'cashout', cash: 'cashout', pot: 'spend', treasury: 'spend', withdraw: 'spend', bill: 'split', share: 'split', vote: 'poll', voting: 'poll', account: 'join', wallet: 'join', send: 'pay', collect: 'dues', collection: 'dues', reminder: 'remind', progress: 'status' }
 function featureFor(word: string): Feature | undefined {
   const w = word.trim().toLowerCase().replace(/^\//, '').split(/\s+/)[0]
   if (!w) return undefined

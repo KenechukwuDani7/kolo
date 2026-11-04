@@ -79,6 +79,8 @@ export const managerAbi = [
     outputs: [],
   },
   { type: 'function', name: 'isApproved', stateMutability: 'view', inputs: [permissionInput], outputs: [{ type: 'bool' }] },
+  // Called by the spender (Kolo) to give up its own permission for good.
+  { type: 'function', name: 'revokeAsSpender', stateMutability: 'nonpayable', inputs: [permissionInput], outputs: [] },
   {
     type: 'function',
     name: 'getCurrentPeriod',
@@ -168,6 +170,12 @@ export const approveWithSignature = (permission: SpendPermission, signature: Hex
   send({
     to: SPEND_PERMISSION_MANAGER,
     data: encodeFunctionData({ abi: managerAbi, functionName: 'approveWithSignature', args: [permission, signature] }),
+  })
+
+export const revokeAsSpender = (permission: SpendPermission) =>
+  send({
+    to: SPEND_PERMISSION_MANAGER,
+    data: encodeFunctionData({ abi: managerAbi, functionName: 'revokeAsSpender', args: [permission] }),
   })
 
 export const spend = (permission: SpendPermission, value: bigint) =>

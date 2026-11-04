@@ -23,6 +23,7 @@ import {
   send,
   spend,
   usedToday,
+  revokeAsSpender,
   type SpendPermission,
 } from './chain.js'
 
@@ -188,6 +189,26 @@ const routes: Record<string, (body: any) => Promise<unknown>> = {
 await prepareLocalFork()
 
 createServer(async (req, res) => {
+  // Revoking is for the bot on this machine only. Anything through the public HTTPS
+  // proxy carries X-Forwarded-For, so it can never revoke someone else's permission.
+  if (req.method === 'POST' && req.url === '/internal/revoke') {
+    if (req.headers['x-forwarded-for']) {
+      res.writeHead(403).end()
+      return
+    }
+    try {
+      const { address } = await readBody(req)
+      const w = wallets.get(String(address).toLowerCase())
+      if (!w) throw new Error('no Kolo wallet with that address')
+      const tx = await revokeAsSpender(w.permission)
+      wallets.delete(String(address).toLowerCase())
+      saveWallets()
+      res.writeHead(200, { 'content-type': 'application/json' }).end(toJson({ revoked: link(tx.hash) }))
+    } catch (error: any) {
+      res.writeHead(400, { 'content-type': 'application/json' }).end(toJson({ error: error?.shortMessage ?? String(error?.message ?? error) }))
+    }
+    return
+  }
   const route = routes[req.url ?? '']
   if (req.method === 'POST' && route) {
     try {
