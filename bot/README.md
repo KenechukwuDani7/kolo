@@ -21,6 +21,7 @@ and say so if judges ask. Telegram (full group-bot support) stays the fallback.
 | `src/roqqu.ts` | Roqqu RAS client: payment links, deposits, member wallets, sends, naira rate, webhook decryption. |
 | `src/intent.ts` | AI message reader (English and Pidgin) that turns a message into one structured request. |
 | `src/ussd.ts`, `src/ussd-page.ts` | USSD menu in Africa's Talking format, and an on-screen phone to demo it at `/ussd`. |
+| `src/language-check.ts` | Sends the same requests in 8 languages through the real AI and prints the replies. |
 | `src/roqqu-check.ts` | Live check against the Roqqu sandbox. |
 
 ## Run

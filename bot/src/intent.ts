@@ -1,4 +1,4 @@
-// AI message reader: turns a free-form chat message (English or Pidgin) into ONE
+// AI message reader: turns a free-form chat message (in any language) into ONE
 // structured Kolo request. The model only proposes; Kolo's code checks the
 // request and decides what actually happens, so the AI can never move money.
 import AnthropicBedrock from '@anthropic-ai/bedrock-sdk'
@@ -28,7 +28,10 @@ export const Intent = z.object({
   reply: z
     .string()
     .nullable()
-    .describe('Only for chat or help: a short, friendly reply in the sender\'s style (Pidgin if they used Pidgin), max 2 sentences'),
+    .describe('Only for chat or help: a short, natural reply in the sender\'s language and style, max 2 sentences'),
+  language: z
+    .string()
+    .describe('The language the message is written in, named in English: "English", "Nigerian Pidgin", "Igbo", "Yoruba", "Hausa", "Chinese", "Italian", "French"…'),
 })
 export type Intent = z.infer<typeof Intent>
 
@@ -68,12 +71,15 @@ Facts about Kolo, for chat replies (never invent others):
 - Payments go through Roqqu pay links; Kolo ticks people automatically when Roqqu confirms. No data? Members can pay on USSD.
 
 Rules:
-- Understand Nigerian English and Pidgin. Amounts: "2k" = 2000, "15k" = 15000, "1.5k" = 1500, "N2,000" / "₦2000" = 2000, "five thousand" = 5000.
+- Messages can be in ANY language: English, Nigerian Pidgin, Igbo, Yoruba, Hausa, Chinese, Italian, French, Arabic, Spanish and more, or a mix. Read the meaning, not the words, and fill the same fields; set language to what the sender wrote in. Numbers written in words count too ("puku abụọ" = 2000 in Igbo, "ẹgbẹ̀rún méjì" = 2000 in Yoruba, "dubu biyu" = 2000 in Hausa, "两千" = 2000, "duemila" = 2000).
+- Amounts: "2k" = 2000, "15k" = 15000, "1.5k" = 1500, "N2,000" / "₦2000" = 2000, "five thousand" = 5000.
 - people: only names from the member list, matched loosely (nicknames, lowercase, missing letters). Never include the sender. "everybody"/"all of una" in remind means the unpaid list: return those names.
 - A name that is not a member goes in unknownNames. Still choose the action the sender meant (e.g. pay); Kolo will ask who they mean.
 - includeSender: true when the sender says "me", "us", "we", or clearly shares the bill.
 - If a needed amount is missing, still pick the action and set amount to null; Kolo will ask.
-- reply is ONLY for chat (Kolo writes its own help text). Keep it short, warm and on-brand, and actually answer the question using the facts above (e.g. how to add Kolo to a group); then, if it fits, steer back to what Kolo does. Never be dismissive. Never claim money has moved. Only remind the sender about dues if the sender is in the Unpaid list.
+- For help: leave reply null for a general "what can you do?" or a question about one feature (Kolo shows its own guide). Only when the question is specific but isn't one feature (like how to add Kolo to a group), write a short reply that answers it.
+- "Everyone pay 2k" / "kowa ya biya dubu biyu" / "make everybody drop" is starting dues, not paid. paid is only when the sender says they themselves have paid.
+- reply is otherwise ONLY for chat (Kolo writes its own help text). Write it in the sender's language, like a helpful friend texting back: plain, calm, one or two short sentences. Actually answer the question using the facts above (e.g. how to add Kolo to a group). No emoji unless it truly fits (never more than one), no stacked exclamation marks, no hype or salesy words, no filler like "Ah" or "Ready to help!". Never be dismissive. Never claim money has moved. Only remind the sender about dues if the sender is in the Unpaid list.
 - Never invent members, amounts or payments.`
 
 // Haiku 4.5 is an ARN-versioned Bedrock model: it rejects the SDK's default API
@@ -106,4 +112,21 @@ export async function readIntent(text: string, ctx: IntentContext): Promise<Inte
   })
   if (!response.parsed_output) throw new Error(`could not read intent (stop_reason ${response.stop_reason})`)
   return response.parsed_output
+}
+
+const Translation = z.object({ texts: z.array(z.string()) })
+
+// Kolo's own replies are written in English; this puts them into the sender's language,
+// keeping names, amounts, links, @mentions, /commands and formatting exactly as they are.
+export async function translate(texts: string[], language: string): Promise<string[]> {
+  const response = await client.messages.parse({
+    model: MODEL,
+    max_tokens: 2048,
+    system: `Translate each message from Kolo, a WhatsApp group-money bot, fully into ${language}. Sound like a native speaker texting a friend: natural, plain and calm, not formal and not robotic. Translate every ordinary word, including words like "collection", "each", "paid", "collected", "reply", "pot"; don't leave English words in the sentence. Keep exactly as they are only: people's names, @mentions, amounts like ₦2,000, numbers like 0/3, links, /commands, the word "paid" when it's in quotes (it's a command people type), wallet addresses, references, *bold* markers and line breaks. Don't add emoji or anything that isn't in the original. Return the same number of texts, in the same order.`,
+    messages: [{ role: 'user', content: JSON.stringify(texts) }],
+    output_config: { format: zodOutputFormat(Translation) },
+  })
+  const out = response.parsed_output?.texts
+  if (!out || out.length !== texts.length) throw new Error('translation came back incomplete')
+  return out
 }

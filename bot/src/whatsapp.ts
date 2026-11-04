@@ -32,7 +32,8 @@ try {
 } catch {
   // no .env
 }
-const reader = process.env.AWS_BEARER_TOKEN_BEDROCK || process.env.AWS_ACCESS_KEY_ID ? (await import('./intent.js')).readIntent : undefined
+const ai = process.env.AWS_BEARER_TOKEN_BEDROCK || process.env.AWS_ACCESS_KEY_ID ? await import('./intent.js') : undefined
+const reader = ai?.readIntent
 
 // Roqqu pay links are on when a Roqqu test key is present (.env).
 // Pay links not yet confirmed: reference → the link's deposit addresses and when it was made.
@@ -88,7 +89,7 @@ const walletInfo: WalletInfo = {
     return json
   },
 }
-const kolo = new Kolo(reader, payments, walletInfo)
+const kolo = new Kolo(reader, payments, walletInfo, ai?.translate)
 
 // Collections, the pot and open pay links survive restarts in data/state.json (private, not in git).
 const STATE_FILE = 'data/state.json'

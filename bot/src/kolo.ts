@@ -30,6 +30,8 @@ export type Action =
   | { type: 'dm'; userId: string; text: string }
 
 export type Reader = (text: string, ctx: IntentContext) => Promise<Intent>
+// Puts Kolo's replies into another language (same number of texts back, same order).
+export type Translator = (texts: string[], language: string) => Promise<string[]>
 
 // Makes a personal pay link for one member's share (Roqqu payment links in the real
 // adapter). Kolo is told about payments later through confirmPayment(reference).
@@ -65,7 +67,7 @@ const naira = (n: number) => `₦${n.toLocaleString('en-NG')}`
 // WhatsApp renders "@<number>" as the person's name when their id is in `mentions`.
 const tag = (m: Member) => `@${m.id.split('@')[0]}`
 const DEMO_CREDIT = 10_000
-const potLine = (pot: number) => `🏦 Group pot: ${naira(pot)}`
+const potLine = (pot: number) => `Group pot: ${naira(pot)}`
 const payLinkText =(m: Member, c: Collection, url: string) =>
   `Hi ${m.name}! Your share of *${c.title}* is ${naira(c.amount)}.\nPay here (USDT or BTC, via Roqqu): ${url}\nI'll tick you in the group as soon as it lands.`
 
@@ -139,7 +141,7 @@ export class Kolo {
       {
         type: 'text',
         chatId: who.chatId,
-        text: `🔐 ${who.name} set up their own Kolo wallet (${short}).\nOnly ${who.name}'s fingerprint or face controls it, and Kolo can spend at most ${dailyLimit} a day from it. The blockchain enforces that limit, not Kolo.\nCash out to it anytime: /cashout [amount]`,
+        text: `${who.name} just set up their own Kolo wallet (${short}). Only their fingerprint or face can control it, and I can't spend more than ${dailyLimit} a day from it. That limit is enforced on the blockchain, not by me.`,
       },
     ].map(sign)
   }
@@ -150,10 +152,10 @@ export class Kolo {
   balanceOf = (memberId: string) => this.balances.get(memberId) ?? DEMO_CREDIT
 
   // Groups this member belongs to (any group that has run a collection with them in it).
-  // "🏦 Group pot: ₦6,000 · own account 0xab…cd"
+  // "Group pot: ₦6,000 (own account 0xab…cd)"
   potText(chatId: string) {
     const account = this.groupAccounts.get(chatId)
-    return `🏦 Group pot: ${naira(this.pot(chatId))}${account ? ` · own account ${account.slice(0, 6)}…${account.slice(-4)}` : ''}`
+    return `Group pot: ${naira(this.pot(chatId))}${account ? ` (own account ${account.slice(0, 6)}…${account.slice(-4)})` : ''}`
   }
 
   // Money sent straight to a group's own account (not through a pay link) goes into its pot.
@@ -161,7 +163,7 @@ export class Kolo {
     const chatId = [...this.groupAccounts].find(([, a]) => a.toLowerCase() === address.toLowerCase())?.[0]
     if (!chatId) return []
     this.credit(chatId, amount)
-    const text = `💰 ${naira(amount)} landed in the group's own account.\n${this.potText(chatId)}\nTx: ${hash.slice(0, 12)}…`
+    const text = `${naira(amount)} just came into the group's account.\n${this.potText(chatId)}`
     return [{ type: 'text' as const, chatId, text }].map(sign)
   }
 
@@ -187,14 +189,15 @@ export class Kolo {
     this.balances.set(memberId, balance - c.amount)
     c.paid.set(memberId, member.name)
     this.credit(chatId, c.amount)
-    const done = c.paid.size === c.members.length ? '\n🎉 Everybody don pay!' : ''
-    return { ok: true, actions: [this.duesCard(chatId, c, `${member.name} paid ✅ by USSD (no data needed)${done}`)].map(sign) }
+    const done = c.paid.size === c.members.length ? "\nThat's everyone. All paid." : ''
+    return { ok: true, actions: [this.duesCard(chatId, c, `${member.name} paid by USSD (no data needed).${done}`)].map(sign) }
   }
 
   constructor(
     private read?: Reader,
     private payments?: Payments,
     private walletInfo?: WalletInfo,
+    private translate?: Translator,
   ) {}
 
   // The payment provider confirmed a pay link was paid: tick that member off.
@@ -205,16 +208,38 @@ export class Kolo {
     if (!ref || !c || !member || c.paid.has(member.id)) return []
     c.paid.set(member.id, member.name)
     this.credit(ref.chatId, c.amount)
-    const done = c.paid.size === c.members.length ? '\n🎉 Everybody don pay!' : ''
-    return [this.duesCard(ref.chatId, c, `${member.name} paid ✅ (confirmed by ${via})${done}`)].map(sign)
+    const done = c.paid.size === c.members.length ? "\nThat's everyone. All paid." : ''
+    return [this.duesCard(ref.chatId, c, `${member.name} has paid. Confirmed by ${via}.${done}`)].map(sign)
   }
 
   // Everything Kolo posts back into the same chat is sent as a reply to the message that triggered it.
   async handle(msg: Incoming): Promise<Action[]> {
-    const actions = await this.respond(msg)
-    return actions
-      .map((a) => ((a.type === 'text' || a.type === 'image') && a.chatId === msg.chatId ? { ...a, reply: true } : a))
-      .map(sign)
+    const heard: { language?: string } = {}
+    const actions = (await this.respond(msg, heard)).map((a) =>
+      (a.type === 'text' || a.type === 'image') && a.chatId === msg.chatId ? { ...a, reply: true } : a,
+    )
+    return (await this.inLanguage(actions, msg, heard.language)).map(sign)
+  }
+
+  // Reply in the language the person wrote in. Only the replies meant for them are
+  // translated (group replies and their own DMs); other people's DMs stay as they are.
+  private async inLanguage(actions: Action[], msg: Incoming, language?: string): Promise<Action[]> {
+    if (!this.translate || !language || /^(english|nigerian pidgin|pidgin|nigerian english)$/i.test(language.trim())) return actions
+    const mine = (a: Action) => (a.type === 'text' || a.type === 'image' ? a.chatId === msg.chatId : a.type === 'dm' && a.userId === msg.sender.id)
+    const picked = actions.filter(mine)
+    if (!picked.length) return actions
+    try {
+      const out = await this.translate(picked.map((a) => (a.type === 'image' ? a.caption : (a as { text: string }).text)), language)
+      const done = new Map(picked.map((a, i) => [a, out[i]]))
+      return actions.map((a) => {
+        const t = done.get(a)
+        if (t === undefined) return a
+        return a.type === 'image' ? { ...a, caption: t } : { ...a, text: t }
+      })
+    } catch (error) {
+      console.error('translation failed, replying in English:', error)
+      return actions
+    }
   }
 
   // tally: option name → ids of everyone currently voting for it
@@ -227,7 +252,7 @@ export class Kolo {
     this.pots.set(chatId, this.pot(chatId) + amount)
   }
 
-  private async respond(msg: Incoming): Promise<Action[]> {
+  private async respond(msg: Incoming, heard: { language?: string }): Promise<Action[]> {
     if (!isAddressed(msg)) return [] // in groups Kolo ignores ordinary chat
     const text = msg.text.trim()
     if (/^paid\b/i.test(text)) return this.markPaid(msg)
@@ -237,7 +262,9 @@ export class Kolo {
     if (!body) return [this.text(msg, HELP)]
     if (!this.read) return this.command(msg, body)
     try {
-      return this.fromIntent(msg, await this.read(body, this.context(msg)))
+      const intent = await this.read(body, this.context(msg))
+      heard.language = intent.language
+      return this.fromIntent(msg, intent)
     } catch (error) {
       console.error('AI reader failed, falling back to commands:', error)
       return this.command(msg, body)
@@ -313,9 +340,12 @@ export class Kolo {
         return this.limit(msg)
       case 'help':
         // Explanations come from FEATURES, never from the AI, so they are always accurate.
-        return [this.text(msg, intent.topic ? explain(intent.topic) : HELP)]
+        if (intent.topic) return [this.text(msg, explain(intent.topic))]
+        // A specific question that isn't one feature (e.g. "how do I add you to a group?")
+        // gets a straight answer; a general "what can you do?" gets the menu.
+        return [this.text(msg, intent.reply ? `${intent.reply}\nType / to see everything I can do.` : HELP)]
       case 'chat':
-        return [this.text(msg, `${intent.reply ?? offPoint(msg.sender.name)}\n\n_Type / for what I can do._`)]
+        return [this.text(msg, intent.reply ?? offPoint(msg.sender.name))]
     }
   }
 
@@ -379,10 +409,10 @@ export class Kolo {
       this.duesCard(
         msg.chatId,
         collection,
-        `New collection: ${collection.title}\n${naira(amount)} each\n📩 I've sent each person a pay link. Pay with USDT or BTC through Roqqu, and I'll tick you here automatically.${
-          account ? `\n🏦 This group's money sits in its own account (${account.slice(0, 6)}…${account.slice(-4)}), never in one shared pool.` : ''
+        `New collection: ${collection.title}, ${naira(amount)} each.\nI've sent everyone their own pay link in DM. Once Roqqu confirms your payment, I'll tick you here, no screenshots needed.${
+          account ? `\nThe money goes into this group's own account (${account.slice(0, 6)}…${account.slice(-4)}), not a shared pool.` : ''
         }${
-          missing.length ? `\n⚠️ Couldn't make a link for ${missing.map((m) => m.name).join(', ')}. Try /status later.` : ''
+          missing.length ? `\nI couldn't make a link for ${missing.map((m) => m.name).join(', ')} yet. I'll need to try again.` : ''
         }`,
       ),
       ...links.map(({ member, url }): Action => ({ type: 'dm', userId: member.id, text: payLinkText(member, collection, url) })),
@@ -391,19 +421,20 @@ export class Kolo {
 
   private markPaid(msg: Incoming): Action[] {
     const collection = this.collections.get(msg.chatId)
-    if (!collection) return []
-    if (collection.paid.has(msg.sender.id)) return [this.text(msg, `${msg.sender.name}, you've already paid ✅`)]
+    // Never go quiet when someone talks to Kolo.
+    if (!collection) return [this.text(msg, `There's no collection running right now, ${msg.sender.name}. Start one with ${FEATURES.dues.say}`)]
+    if (collection.paid.has(msg.sender.id)) return [this.text(msg, `${msg.sender.name}, you've already paid for this one.`)]
     // With pay links, a message is never proof: Kolo waits for Roqqu's confirmation.
     const link = collection.links.get(msg.sender.id)
     if (this.payments && link) {
       return [
-        this.text(msg, `${msg.sender.name}, I go tick you as soon as Roqqu confirms the payment 👀 Your pay link is in your DM.`),
+        this.text(msg, `${msg.sender.name}, I'll tick you as soon as Roqqu confirms it. I've resent your pay link in DM in case you need it.`),
         { type: 'dm', userId: msg.sender.id, text: payLinkText(msg.sender, collection, link) },
       ]
     }
     collection.paid.set(msg.sender.id, msg.sender.name)
     this.credit(msg.chatId, collection.amount)
-    return [this.duesCard(msg.chatId, collection, `${msg.sender.name} paid ✅`)]
+    return [this.duesCard(msg.chatId, collection, `${msg.sender.name} has paid.`)]
   }
 
   // "/confirm @Excel": the organiser records a payment made outside Kolo (cash, transfer).
@@ -415,19 +446,19 @@ export class Kolo {
     if (!who.length) return [this.text(msg, 'Tag who paid you directly, like: /confirm @Excel')]
     for (const m of who) c.paid.set(m.id, c.members.find((x) => x.id === m.id)!.name)
     this.credit(msg.chatId, c.amount * who.length)
-    return [this.duesCard(msg.chatId, c, `${who.map((m) => c.paid.get(m.id)).join(', ')} paid ✅ (confirmed by ${c.organiser.name})`)]
+    return [this.duesCard(msg.chatId, c, `${who.map((m) => c.paid.get(m.id)).join(', ')} paid ${c.organiser.name} directly. Marked as paid.`)]
   }
 
   private remind(msg: Incoming, who?: Member[]): Action[] {
     const c = this.collections.get(msg.chatId)
     if (!c) return [this.text(msg, `No collection is running yet.\nStart one with: ${FEATURES.dues.say}`)]
     const targets = (who ?? this.unpaid(c)).filter((m) => !c.paid.has(m.id))
-    if (!targets.length) return [this.text(msg, who ? `${who.map((m) => m.name).join(', ')} don pay already ✅` : 'Everybody don pay 🎉')]
+    if (!targets.length) return [this.text(msg, who ? `${who.map((m) => m.name).join(', ')} already paid.` : 'Everyone has paid. Nobody to remind.')]
     return [
       {
         type: 'text',
         chatId: msg.chatId,
-        text: `⏰ ${targets.map(tag).join(' ')} your ${naira(c.amount)} for *${c.title}* still dey wait 👀\n${c.paid.size}/${c.members.length} paid so far.`,
+        text: `Gentle reminder ${targets.map(tag).join(' ')}: your ${naira(c.amount)} for ${c.title} is still outstanding. ${c.paid.size} of ${c.members.length} have paid so far.`,
         mentions: targets.map((m) => m.id),
       },
     ]
@@ -441,7 +472,7 @@ export class Kolo {
     return [
       this.text(
         msg,
-        `📊 *${c.title}* · ${naira(c.amount)} each\n${c.paid.size}/${c.members.length} paid · ${naira(c.paid.size * c.amount)} collected\n✅ ${paid.join(', ') || 'nobody yet'}\n⏳ ${unpaid.map((m) => m.name).join(', ') || 'nobody'}\n${this.potText(msg.chatId)}`,
+        `*${c.title}*, ${naira(c.amount)} each\n${c.paid.size} of ${c.members.length} paid, ${naira(c.paid.size * c.amount)} collected\nPaid: ${paid.join(', ') || 'nobody yet'}\nNot yet: ${unpaid.map((m) => m.name).join(', ') || 'nobody'}\n${this.potText(msg.chatId)}`,
       ),
     ]
   }
@@ -466,7 +497,7 @@ export class Kolo {
       {
         type: 'text',
         chatId: msg.chatId,
-        text: `🍔 ${naira(amount)} split ${people.length} ways = ${naira(share)} each\n${lines}\nTap your pay request in DM.`,
+        text: `${naira(amount)} split ${people.length} ways is ${naira(share)} each.\n${lines}\nI've sent each of you a pay request in DM.`,
         mentions: owing.map((p) => p.id),
       },
       ...owing.map((p): Action => ({ type: 'dm', userId: p.id, text: `${msg.sender.name} split ${naira(amount)} with you. Your share: ${naira(share)}. Pay: ${JOIN_URL}` })),
@@ -479,14 +510,14 @@ export class Kolo {
     if (!amount) return [this.text(msg, `How much should I send ${to.map((m) => m.name).join(' and ')}?\nSay it like: ${FEATURES.pay.say}`)]
     // Sending money needs the sender's own approval; the bot only prepares it.
     return [
-      { type: 'text', chatId: msg.chatId, text: `💸 ${msg.sender.name}, I've sent you a private link to confirm ${naira(amount)} to ${to.map((m) => m.name).join(', ')}.` },
+      { type: 'text', chatId: msg.chatId, text: `${msg.sender.name}, I've sent you a private link to confirm ${naira(amount)} to ${to.map((m) => m.name).join(', ')}.` },
       { type: 'dm', userId: msg.sender.id, text: `Confirm ${naira(amount)} to ${to.map((m) => m.name).join(', ')}: ${JOIN_URL}\n(Within your daily limit it goes through instantly; above it, you'll confirm with your fingerprint.)` },
     ]
   }
 
   private join(msg: Incoming): Action[] {
     const existing = this.wallets.get(msg.sender.id)
-    if (existing) return [this.text(msg, `${msg.sender.name}, you already have a Kolo wallet (${existing.slice(0, 6)}…${existing.slice(-4)}) ✅`)]
+    if (existing) return [this.text(msg, `${msg.sender.name}, you already have a Kolo wallet (${existing.slice(0, 6)}…${existing.slice(-4)}).`)]
     // A one-time token ties the wallet page back to this person and group.
     const token = crypto.randomUUID().replace(/-/g, '')
     this.joinTokens.set(token, { chatId: msg.chatId, memberId: msg.sender.id, name: msg.sender.name })
@@ -496,7 +527,7 @@ export class Kolo {
         userId: msg.sender.id,
         text: `Hi ${msg.sender.name}! Tap to set up your own Kolo wallet with your fingerprint or face (about 20 seconds): ${JOIN_URL}/?t=${token}\nNo password, no seed phrase. Only your device can approve big payments.`,
       },
-      this.text(msg, `📩 ${msg.sender.name}, I've sent you a private link.`),
+      this.text(msg, `${msg.sender.name}, check your DM. I've sent you a private link.`),
     ]
   }
 
@@ -512,7 +543,7 @@ export class Kolo {
       return [
         this.text(
           msg,
-          `🔐 ${msg.sender.name}'s daily limit\nSpent today: ${naira(u.used)}\nLeft to spend: *${naira(u.left)}* of ${naira(u.limit)}\n${'🟥'.repeat(filled)}${'⬜'.repeat(10 - filled)}\nResets in about ${hours}h. Anything above it needs your fingerprint.`,
+          `${msg.sender.name}, you've used ${naira(u.used)} of your ${naira(u.limit)} daily limit. *${naira(u.left)} left* for today.\n${'▰'.repeat(filled)}${'▱'.repeat(10 - filled)}\nIt resets in about ${hours}h. Anything above it needs your fingerprint.`,
         ),
       ]
     } catch (error) {
@@ -530,7 +561,7 @@ export class Kolo {
     if (amount > balance) return [this.text(msg, `Your Kolo balance is ${naira(balance)}, so you can't cash out ${naira(amount)}.`)]
     if (!this.payments) {
       this.balances.set(msg.sender.id, balance - amount)
-      return [this.text(msg, `💸 ${naira(amount)} sent to your wallet (test mode, no money moved). Balance: ${naira(balance - amount)}`)]
+      return [this.text(msg, `Sent ${naira(amount)} to your wallet (test mode, no money moved). Balance: ${naira(balance - amount)}`)]
     }
     try {
       const { reference, sent } = await this.payments.payout({ chatId: msg.chatId, member: msg.sender, amount, purpose: 'cash-out', address })
@@ -538,7 +569,7 @@ export class Kolo {
       return [
         this.text(
           msg,
-          `💸 Cashed out ${naira(amount)} (${sent}) to your own wallet ${address.slice(0, 6)}…${address.slice(-4)}.\nRoqqu ref: ${reference}\nKolo balance left: ${naira(balance - amount)}`,
+          `Done. ${naira(amount)} (${sent}) is on its way to your wallet ${address.slice(0, 6)}…${address.slice(-4)}.\nRoqqu ref: ${reference}\nKolo balance: ${naira(balance - amount)}`,
         ),
       ]
     } catch (error) {
@@ -548,7 +579,7 @@ export class Kolo {
   }
 
   private askWho(msg: Incoming, names: string[]): Action {
-    return this.text(msg, `🤔 I no see ${names.join(' or ')} for this group. Tag them with @ so I know who you mean.`)
+    return this.text(msg, `I can't find ${names.join(' or ')} in this group. Tag them with @ so I know who you mean.`)
   }
 
   private startPoll(msg: Incoming, question: string): Action[] {
@@ -573,7 +604,7 @@ export class Kolo {
     const question = `Spend ${naira(amount)} from the pot: pay ${spend.to.name} for ${spend.purpose}?`
     this.polls.set(pollId, { chatId: msg.chatId, question, needed, settled: false, spend })
     return [
-      this.text(msg, `🗳️ ${msg.sender.name} wants to spend ${naira(amount)} of the pot (${naira(pot)}). The group decides: ${needed} yes and I pay ${spend.to.name} straight away.`),
+      this.text(msg, `${msg.sender.name} wants to spend ${naira(amount)} from the pot (${naira(pot)} in it). Vote below. Once ${needed} people say yes, I'll pay ${spend.to.name}.`),
       { type: 'poll', chatId: msg.chatId, pollId, question: `${question} (needs ${needed} yes)`, options: ['Yes', 'No'] },
     ]
   }
@@ -581,20 +612,20 @@ export class Kolo {
   private async paySpend(poll: Poll, spend: Spend, yes: number): Promise<Action[]> {
     const say = (text: string): Action[] => [{ type: 'text', chatId: poll.chatId, text }]
     const pot = this.pot(poll.chatId)
-    if (spend.amount > pot) return say(`✅ Approved, but the pot now has only ${naira(pot)}. Nothing was sent.`)
+    if (spend.amount > pot) return say(`The vote passed, but the pot only has ${naira(pot)} now, so nothing was sent.`)
     if (!this.payments) {
       this.pots.set(poll.chatId, pot - spend.amount)
-      return say(`✅ Approved ${yes}/${poll.needed}. ${naira(spend.amount)} paid to ${spend.to.name} for ${spend.purpose} (test mode, no money moved).\n${this.potText(poll.chatId)}`)
+      return say(`Approved (${yes} yes). ${naira(spend.amount)} paid to ${spend.to.name} for ${spend.purpose} (test mode, no money moved).\n${this.potText(poll.chatId)}`)
     }
     try {
       const { reference, sent } = await this.payments.payout({ chatId: poll.chatId, member: spend.to, amount: spend.amount, purpose: spend.purpose })
       this.pots.set(poll.chatId, pot - spend.amount)
       return say(
-        `✅ Approved ${yes}/${poll.needed}. Paid!\n🧾 *Receipt*\n${naira(spend.amount)} (${sent}) → ${spend.to.name}\nFor: ${spend.purpose}\nAsked by: ${spend.by.name}\nRoqqu ref: ${reference}\n${this.potText(poll.chatId)}`,
+        `Approved with ${yes} yes votes, so I've paid it.\n*Receipt*\n${naira(spend.amount)} (${sent}) to ${spend.to.name}\nFor: ${spend.purpose}\nAsked by: ${spend.by.name}\nRoqqu ref: ${reference}\n${this.potText(poll.chatId)}`,
       )
     } catch (error) {
       console.error('payout failed:', error)
-      return say(`✅ Approved, but Roqqu couldn't send it: ${(error as Error).message}. The pot is unchanged (${naira(pot)}).`)
+      return say(`The vote passed, but Roqqu couldn't send it: ${(error as Error).message}. The pot is unchanged (${naira(pot)}).`)
     }
   }
 
@@ -606,13 +637,13 @@ export class Kolo {
     if (yes >= poll.needed) {
       poll.settled = true
       if (poll.spend) return this.paySpend(poll, poll.spend, yes)
-      return [{ type: 'text', chatId: poll.chatId, text: `✅ Approved ${yes}/${poll.needed}: "${poll.question}"` }]
+      return [{ type: 'text', chatId: poll.chatId, text: `The vote passed (${yes} yes): "${poll.question}"` }]
     }
     if (no >= poll.needed) {
       poll.settled = true
-      return [{ type: 'text', chatId: poll.chatId, text: `❌ Rejected: "${poll.question}"` }]
+      return [{ type: 'text', chatId: poll.chatId, text: `The group voted no: "${poll.question}"` }]
     }
-    return [{ type: 'text', chatId: poll.chatId, text: `🗳️ "${poll.question}" · Yes ${yes} · No ${no} · needs ${poll.needed}` }]
+    return [{ type: 'text', chatId: poll.chatId, text: `"${poll.question}" so far: ${yes} yes, ${no} no. Needs ${poll.needed}.` }]
   }
 
   private text(msg: Incoming, text: string): Action {
@@ -623,9 +654,9 @@ export class Kolo {
 const stripMention = (text: string) => text.replace(/^@?kolo\b[,:]?\s*/i, '').replace(/^@\S+\s*/, '').trim()
 
 const OFF_POINT = [
-  (name: string) => `😅 ${name}, you dey talk off point. I only sabi money matters: dues, splits, polls and your Kolo account. Type / to see wetin I fit do.`,
-  (name: string) => `🐷 Abeg ${name}, na money I dey handle, no be gist 😂 Try "/dues", "split" or "/poll". Type / for the menu.`,
-  (name: string) => `🤔 I no understand that one, ${name}. I fit collect dues, split bills and run polls. Type / for the menu.`,
+  (name: string) => `${name}, I can only help with group money: dues, splits, votes and your Kolo wallet. Type / to see what I can do.`,
+  (name: string) => `Sorry ${name}, that's not something I can do. I handle group money, like collecting dues or splitting a bill. Type / for the menu.`,
+  (name: string) => `I didn't quite get that, ${name}. Try asking about dues, a split or a vote, or type / for the menu.`,
 ]
 let offPointTurn = 0
 const offPoint = (name: string) => OFF_POINT[offPointTurn++ % OFF_POINT.length](name)
@@ -637,7 +668,7 @@ const LABEL = '🐷 *Kolo*'
 function sign(a: Action): Action {
   if (a.type === 'text' || a.type === 'dm') return { ...a, text: `${LABEL}\n${a.text}` }
   if (a.type === 'image') return { ...a, caption: `${LABEL}\n${a.caption}` }
-  return { ...a, question: `🐷 Kolo poll: ${a.question}` }
+  return { ...a, question: `Kolo vote: ${a.question}` }
 }
 
 // Feature guide: what each thing does and how to ask for it. [brackets] are blanks
@@ -725,10 +756,10 @@ export type Feature = keyof typeof FEATURES
 
 const HELP = `I keep track of your group's money so nobody has to chase anybody.
 Talk to me normally, starting with "Kolo", or use a shortcut. [brackets] are what you fill in.
-➕ Want me in another group? Save my number and add me like any member.
+Want me in another group? Save my number and add me like any other member.
 
 ${Object.values(FEATURES)
-  .map((f) => `${f.icon} *${f.name}*\n   ${f.say}\n   _${f.short}_`)
+  .map((f) => `*${f.name}*: ${f.say}\n${f.short}`)
   .join('\n')}
 
 Want more on one? Type /help [feature], e.g. /help split`
@@ -743,5 +774,5 @@ function featureFor(word: string): Feature | undefined {
 
 const explain = (f: Feature) => {
   const x = FEATURES[f]
-  return `${x.icon} *${x.name}*\nHow to ask: ${x.say}\n\n${x.long}\n\n_Type / for everything I can do._`
+  return `*${x.name}*\nHow to ask: ${x.say}\n\n${x.long}\n\nType / for everything I can do.`
 }

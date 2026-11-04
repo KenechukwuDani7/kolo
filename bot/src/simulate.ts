@@ -8,7 +8,8 @@ import { ussd } from './ussd.js'
 import { Kolo, type Action, type Incoming, type Member, type Payments, type Reader } from './kolo.js'
 
 const useAi = process.argv.includes('--ai')
-const reader: Reader | undefined = useAi ? (await import('./intent.js')).readIntent : undefined
+const ai = useAi ? await import('./intent.js') : undefined
+const reader: Reader | undefined = ai?.readIntent
 const usePay = process.argv.includes('--pay')
 const payments: Payments | undefined = usePay
   ? {
@@ -17,7 +18,7 @@ const payments: Payments | undefined = usePay
       groupAccount: async () => '0xab12000000000000000000000000000000cd34',
     }
   : undefined
-const kolo = new Kolo(reader, payments, { usage: async () => ({ used: 4000, limit: 10000, left: 6000, resetsAt: Date.now() + 9 * 3_600_000 }) })
+const kolo = new Kolo(reader, payments, { usage: async () => ({ used: 4000, limit: 10000, left: 6000, resetsAt: Date.now() + 9 * 3_600_000 }) }, ai?.translate)
 const group = 'class-group'
 const people = { chinedu: 'Chinedu', ada: 'Ada', chidi: 'Chidi', tobe: 'Tobe' } as const
 type Person = keyof typeof people
