@@ -26,6 +26,10 @@ export const NATIVE_TOKEN: Address = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE
 export const DAILY_CAP = parseEther('0.001')
 export const PAYMENT = parseEther('0.0004')
 export const WALLET_FUNDING = parseEther('0.003')
+// The same stand-in scale for the sign-up page's naira amounts: 0.001 ETH = ₦20,000.
+export const NAIRA_PER_ETH = 20_000_000
+export const nairaToWei = (naira: number) => parseEther((naira / NAIRA_PER_ETH).toFixed(18))
+export const weiToNaira = (wei: bigint) => Math.round(Number(wei) / 1e18 * NAIRA_PER_ETH)
 
 export const spendPermissionComponents = [
   { name: 'account', type: 'address' },
@@ -132,13 +136,13 @@ export function send(tx: { to: Address; data?: Hex; value?: bigint }) {
   return run
 }
 
-export function newPermission(account: Address): SpendPermission {
+export function newPermission(account: Address, allowance = DAILY_CAP): SpendPermission {
   const now = Math.floor(Date.now() / 1000)
   return {
     account,
     spender: bot.address,
     token: NATIVE_TOKEN,
-    allowance: DAILY_CAP,
+    allowance,
     period: 86_400,
     start: now - 60,
     end: now + 30 * 86_400,

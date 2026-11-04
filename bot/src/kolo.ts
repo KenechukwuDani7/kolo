@@ -111,6 +111,12 @@ export class Kolo {
     this.wallets = new Map(s.wallets ?? [])
   }
 
+  // Who a /join link is for, so the wallet page can greet them by name.
+  invite(token: string) {
+    const who = this.joinTokens.get(token)
+    return who && { name: who.name, chatId: who.chatId }
+  }
+
   // The wallet page finished: passkey created, wallet deployed, daily limit signed.
   walletReady(token: string, address: string, dailyLimit: string): Action[] {
     const who = this.joinTokens.get(token)
@@ -122,7 +128,7 @@ export class Kolo {
       {
         type: 'text',
         chatId: who.chatId,
-        text: `🔐 ${who.name} set up their own Kolo wallet (${short}).\nOnly ${who.name}'s fingerprint or face controls it, and Kolo can spend at most ${dailyLimit} a day from it.\nCash out to it anytime: /cashout [amount]`,
+        text: `🔐 ${who.name} set up their own Kolo wallet (${short}).\nOnly ${who.name}'s fingerprint or face controls it, and Kolo can spend at most ${dailyLimit} a day from it. The blockchain enforces that limit, not Kolo.\nCash out to it anytime: /cashout [amount]`,
       },
     ].map(sign)
   }

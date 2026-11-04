@@ -3,16 +3,16 @@
 // deploys the wallet, and spends within the permission the user signed.
 import { readFileSync } from 'node:fs'
 import { createServer, type IncomingMessage } from 'node:http'
-import { formatEther, type Address, type Hex } from 'viem'
+import { type Address, type Hex } from 'viem'
 import { toCoinbaseSmartAccount, toWebAuthnAccount } from 'viem/account-abstraction'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import {
-  DAILY_CAP,
-  PAYMENT,
   RPC_URL,
   SPEND_PERMISSION_MANAGER,
   WALLET_FUNDING,
   approveWithSignature,
+  nairaToWei,
+  weiToNaira,
   bot,
   chain,
   link,
@@ -34,6 +34,10 @@ const page = () => readFileSync(new URL('../public/index.html', import.meta.url)
 let permission: SpendPermission | undefined
 // The /join token from the user's WhatsApp DM, so Kolo knows whose wallet this is.
 let joinToken: string | undefined
+// The daily limit the user picked on the page, and the demo payment the bot makes.
+let limitNaira = 10_000
+const DEMO_PAYMENT_NAIRA = 4_000
+const LIMIT_CHOICES = [5_000, 10_000, 20_000]
 const BOT_URL = process.env.KOLO_BOT_URL ?? 'http://localhost:3117'
 
 // Tell the WhatsApp bot the wallet is ready; it announces it in the group.
@@ -43,7 +47,7 @@ async function tellKolo(address: Address) {
     const res = await fetch(`${BOT_URL}/wallet/registered`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token: joinToken, address, dailyLimit: `${formatEther(DAILY_CAP)} ETH` }),
+      body: JSON.stringify({ token: joinToken, address, dailyLimit: `₦${limitNaira.toLocaleString('en-NG')}` }),
     })
     return res.ok
   } catch {
@@ -63,16 +67,17 @@ async function pay() {
       address: SPEND_PERMISSION_MANAGER,
       abi: managerAbi,
       functionName: 'spend',
-      args: [permission, PAYMENT],
+      args: [permission, nairaToWei(DEMO_PAYMENT_NAIRA)],
     })
   } catch (error: any) {
     const reason = error?.cause?.data?.errorName
     if (!reason) throw error
-    return { ok: false, reason, used: formatEther(await usedToday(permission)) }
+    return { ok: false, reason, used: weiToNaira(await usedToday(permission)) }
   }
-  const spent = await spend(permission, PAYMENT)
-  const forward = await send({ to: chidi as Address, value: PAYMENT })
-  return { ok: true, spent: link(spent.hash), forward: link(forward.hash), used: formatEther(await usedToday(permission)) }
+  const value = nairaToWei(DEMO_PAYMENT_NAIRA)
+  const spent = await spend(permission, value)
+  const forward = await send({ to: chidi as Address, value })
+  return { ok: true, spent: link(spent.hash), forward: link(forward.hash), used: weiToNaira(await usedToday(permission)) }
 }
 
 const toJson = (value: unknown) => JSON.stringify(value, (_, v) => (typeof v === 'bigint' ? v.toString() : v))
@@ -84,15 +89,27 @@ async function readBody(req: IncomingMessage) {
 }
 
 const routes: Record<string, (body: any) => Promise<unknown>> = {
-  async '/api/wallet'({ id, publicKey, token }: { id: string; publicKey: Hex; token?: string }) {
+  // Who this link is for, so the page can greet them: { name, group } from the bot.
+  async '/api/invite'({ token }: { token?: string }) {
+    if (!token) return {}
+    try {
+      const res = await fetch(`${BOT_URL}/wallet/invite?t=${encodeURIComponent(token)}`)
+      return res.ok ? await res.json() : {}
+    } catch {
+      return {}
+    }
+  },
+
+  async '/api/wallet'({ id, publicKey, token, limit }: { id: string; publicKey: Hex; token?: string; limit?: number }) {
     joinToken = token || undefined
+    limitNaira = LIMIT_CHOICES.includes(Number(limit)) ? Number(limit) : 10_000
     // The passkey's credential id + public key are all the backend ever sees.
     const passkey = toWebAuthnAccount({ credential: { id, publicKey } })
     const wallet = await toCoinbaseSmartAccount({ client: publicClient, owners: [passkey, SPEND_PERMISSION_MANAGER] })
     const { factory, factoryData } = await wallet.getFactoryArgs()
     const deploy = await send({ to: factory!, data: factoryData! })
     const fund = await send({ to: wallet.address, value: WALLET_FUNDING })
-    permission = newPermission(wallet.address)
+    permission = newPermission(wallet.address, nairaToWei(limitNaira))
     return {
       address: wallet.address,
       deploy: link(deploy.hash),
@@ -100,8 +117,8 @@ const routes: Record<string, (body: any) => Promise<unknown>> = {
       permission,
       chainId: chain.id,
       manager: SPEND_PERMISSION_MANAGER,
-      cap: formatEther(DAILY_CAP),
-      payment: formatEther(PAYMENT),
+      limit: limitNaira,
+      payment: DEMO_PAYMENT_NAIRA,
     }
   },
 

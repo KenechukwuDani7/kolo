@@ -174,6 +174,12 @@ createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end(reply)
     return
   }
+  // The wallet page asks who a /join link is for, to greet them by name.
+  if (req.url?.startsWith('/wallet/invite') && req.method === 'GET') {
+    const who = kolo.invite(new URL(req.url, 'http://x').searchParams.get('t') ?? '')
+    res.writeHead(who ? 200 : 404, { 'content-type': 'application/json' }).end(JSON.stringify(who ? { name: who.name, group: groupNames.get(who.chatId) ?? 'your group' } : {}))
+    return
+  }
   // The wallet page reports a finished /join: { token, address, dailyLimit }.
   if (req.url === '/wallet/registered' && req.method === 'POST') {
     let body = ''

@@ -4,47 +4,240 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kolo Wallet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root { --ink: #13201a; --muted: #55655c; --line: #dfe6e1; --brand: #0f7a4a; --bg: #f6f8f7; --card: #fff; --bad: #b3261e; }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) { --ink: #e7efe9; --muted: #9db0a4; --line: #2a3a31; --brand: #3ccf86; --bg: #0e1612; --card: #15201a; --bad: #ff8a80; }
+  :root {
+    --bg: #fff4e8; --blob-a: #ffd6e0; --blob-b: #d4f4e2; --card: #ffffff; --ink: #10291d; --muted: #5e6f65; --line: #f0e2d3;
+    --green: #17a35b; --green-top: #26bb6c; --green-deep: #06592e; --on-green: #ffffff; --tint: #e5f7ec;
+    --pink: #ff8fa8; --pink-top: #ffc2d0; --pink-deep: #d9577a; --gold: #f7b733; --gold-top: #ffe08a; --gold-deep: #c27c00;
+    --bad: #c62f3c; --bad-tint: #fde8ea; --shadow: rgba(16, 41, 29, .22);
   }
-  :root[data-theme="dark"] { --ink: #e7efe9; --muted: #9db0a4; --line: #2a3a31; --brand: #3ccf86; --bg: #0e1612; --card: #15201a; --bad: #ff8a80; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0a1510; --blob-a: #3a1c27; --blob-b: #10331f; --card: #14271d; --ink: #eaf6ee; --muted: #9cb4a6; --line: #23402f;
+      --green: #2bcb73; --green-top: #4fdc8d; --green-deep: #0d6b38; --on-green: #05170d; --tint: #173a27;
+      --bad: #ff8a94; --bad-tint: #3a1a1e; --shadow: rgba(0, 0, 0, .55);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a1510; --blob-a: #3a1c27; --blob-b: #10331f; --card: #14271d; --ink: #eaf6ee; --muted: #9cb4a6; --line: #23402f;
+    --green: #2bcb73; --green-top: #4fdc8d; --green-deep: #0d6b38; --on-green: #05170d; --tint: #173a27;
+    --bad: #ff8a94; --bad-tint: #3a1a1e; --shadow: rgba(0, 0, 0, .55);
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
-  main { max-width: 560px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { margin: 0 0 4px; font-size: 26px; }
-  p.sub { margin: 0 0 20px; color: var(--muted); }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 12px; }
-  .card h2 { margin: 0 0 6px; font-size: 16px; }
-  .card p { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
-  button { width: 100%; padding: 12px; border: 0; border-radius: 10px; background: var(--brand); color: #fff; font: 600 15px inherit; cursor: pointer; }
-  button:disabled { opacity: .4; cursor: not-allowed; }
-  #log { font: 12.5px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-all; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; min-height: 80px; }
-  .ok { color: var(--brand); } .bad { color: var(--bad); }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh; color: var(--ink); background: var(--bg);
+    background-image: radial-gradient(40rem 30rem at -10% -10%, var(--blob-a), transparent 60%), radial-gradient(36rem 30rem at 110% 110%, var(--blob-b), transparent 60%);
+    background-attachment: fixed;
+    font: 16px/1.5 "Plus Jakarta Sans", "Segoe UI", system-ui, sans-serif;
+  }
+  main { max-width: 440px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1, h2, .display { font-family: "Bricolage Grotesque", "Plus Jakarta Sans", system-ui, sans-serif; letter-spacing: -.02em; }
+  h1 { font-size: 30px; line-height: 1.1; margin: 4px 0 8px; font-weight: 800; }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+
+  .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .brand { display: flex; align-items: center; gap: 8px; font: 800 20px "Bricolage Grotesque", system-ui, sans-serif; }
+  .brand-dot { width: 28px; height: 28px; border-radius: 9px; background: linear-gradient(180deg, var(--pink-top), var(--pink)); box-shadow: inset 0 -3px 0 var(--pink-deep), 0 4px 10px -3px var(--shadow); display: grid; place-items: center; font-size: 15px; }
+  .steps { display: flex; gap: 6px; }
+  .steps i { width: 22px; height: 8px; border-radius: 99px; background: var(--line); transition: background .3s, width .3s; }
+  .steps i.on { background: var(--green); width: 30px; }
+
+  .card {
+    background: var(--card); border-radius: 28px; padding: 22px 20px;
+    box-shadow: 0 30px 60px -24px var(--shadow), inset 0 -5px 0 rgba(16, 41, 29, .05), inset 0 1px 0 rgba(255, 255, 255, .7);
+    border: 1px solid var(--line);
+  }
+  .screen { display: none; animation: rise .45s cubic-bezier(.2, .9, .3, 1.2) both; }
+  .screen.on { display: block; }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(.98); } }
+
+  .hero { display: grid; place-items: center; margin: -6px 0 6px; }
+  .hero svg { width: 210px; height: auto; overflow: visible; }
+  .coin { animation: drop 2.6s cubic-bezier(.5, 0, .5, 1) infinite; transform-origin: center; }
+  @keyframes drop { 0%, 15% { transform: translateY(-26px); opacity: 0; } 30% { opacity: 1; } 70% { transform: translateY(8px); opacity: 1; } 82%, 100% { transform: translateY(16px); opacity: 0; } }
+  .pig { animation: bob 2.6s ease-in-out infinite; transform-origin: 50% 90%; }
+  @keyframes bob { 0%, 60%, 100% { transform: scale(1); } 72% { transform: scale(1.03, .97); } }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 20px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 99px; background: var(--tint); color: var(--ink); font-weight: 600; font-size: 14px; }
+  .chip::before { content: "✓"; color: var(--green); font-weight: 800; }
+
+  .btn {
+    width: 100%; border: 0; border-radius: 18px; padding: 16px 18px; cursor: pointer; font: 700 17px "Plus Jakarta Sans", system-ui, sans-serif;
+    color: var(--on-green); background: linear-gradient(180deg, var(--green-top), var(--green));
+    box-shadow: 0 6px 0 var(--green-deep), 0 16px 24px -10px var(--green), inset 0 2px 0 rgba(255, 255, 255, .35);
+    transition: transform .08s, box-shadow .08s; display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .btn:active:not(:disabled) { transform: translateY(5px); box-shadow: 0 1px 0 var(--green-deep), 0 6px 12px -8px var(--green), inset 0 2px 0 rgba(255, 255, 255, .35); }
+  .btn:disabled { opacity: .55; cursor: progress; }
+  .btn svg { width: 22px; height: 22px; }
+  .btn.ghost { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--line); }
+  .btn.ghost:active { transform: translateY(2px); box-shadow: inset 0 0 0 2px var(--line); }
+
+  .tiles { display: grid; gap: 12px; margin: 16px 0 18px; }
+  .tile { position: relative; display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-radius: 20px; cursor: pointer; background: var(--card); border: 2px solid var(--line); box-shadow: 0 4px 0 var(--line); transition: transform .15s, box-shadow .15s, border-color .15s; }
+  .tile input { position: absolute; opacity: 0; }
+  .tile b { font: 800 24px "Bricolage Grotesque", system-ui, sans-serif; }
+  .tile small { color: var(--muted); font-size: 13px; }
+  .tile .tick { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; color: transparent; font-weight: 800; }
+  .tile:has(input:checked) { border-color: var(--green); box-shadow: 0 6px 0 var(--green-deep); transform: translateY(-3px); }
+  .tile:has(input:checked) .tick { background: var(--green); border-color: var(--green); color: var(--on-green); }
+  .tile:has(input:focus-visible) { outline: 3px solid var(--gold); outline-offset: 2px; }
+
+  .note { display: flex; gap: 10px; padding: 12px 14px; border-radius: 16px; background: var(--tint); font-size: 14px; margin-bottom: 18px; }
+  .note span:first-child { font-size: 18px; }
+
+  .status { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; background: var(--tint); font-weight: 600; margin: 14px 0; }
+  .status.bad { background: var(--bad-tint); color: var(--bad); }
+  .status[hidden] { display: none; }
+  .spin { width: 18px; height: 18px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--green); animation: spin .8s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .done-dot { width: 22px; height: 22px; border-radius: 50%; background: var(--green); color: var(--on-green); display: grid; place-items: center; font-size: 13px; flex: none; }
+
+  .print { display: grid; place-items: center; margin: 4px 0 10px; }
+  .print .pad { width: 112px; height: 112px; border-radius: 34px; display: grid; place-items: center; background: linear-gradient(180deg, var(--green-top), var(--green)); box-shadow: 0 8px 0 var(--green-deep), 0 24px 40px -14px var(--green), inset 0 3px 0 rgba(255,255,255,.35); }
+  .print svg { width: 62px; height: 62px; color: var(--on-green); }
+
+  .wallet-card {
+    position: relative; margin: 8px 0 18px; padding: 20px; border-radius: 24px; color: #fff; overflow: hidden; aspect-ratio: 1.6;
+    background: linear-gradient(135deg, #1fbf6b 0%, #0d8a49 55%, #075c31 100%);
+    box-shadow: 0 10px 0 #05401f, 0 30px 50px -18px rgba(7, 92, 49, .7), inset 0 2px 0 rgba(255,255,255,.3);
+    transform: perspective(900px) rotateX(10deg); transform-origin: 50% 100%;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .wallet-card::after { content: ""; position: absolute; inset: -40% -60% auto auto; width: 70%; height: 140%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent); transform: rotate(25deg); }
+  .wc-row { display: flex; justify-content: space-between; align-items: center; position: relative; z-index: 1; }
+  .wc-brand { font: 800 20px "Bricolage Grotesque", system-ui, sans-serif; display: flex; gap: 8px; align-items: center; }
+  .wc-chip { width: 38px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--gold-top), var(--gold) 60%, var(--gold-deep)); box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+  .wc-addr { font: 600 15px ui-monospace, Consolas, monospace; letter-spacing: .06em; position: relative; z-index: 1; }
+  .wc-label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .8; }
+  .wc-limit { font: 800 20px "Bricolage Grotesque", system-ui, sans-serif; }
+
+  details { margin-top: 14px; border-radius: 18px; border: 1px solid var(--line); background: var(--card); }
+  summary { cursor: pointer; padding: 14px 16px; font-weight: 700; list-style: none; display: flex; justify-content: space-between; }
+  summary::after { content: "+"; font-size: 20px; line-height: 1; color: var(--muted); }
+  details[open] summary::after { content: "–"; }
+  .dbody { padding: 0 16px 16px; font-size: 14px; }
+  .meter { height: 14px; border-radius: 99px; background: var(--line); overflow: hidden; margin: 10px 0 6px; box-shadow: inset 0 2px 3px rgba(0,0,0,.08); }
+  .meter i { display: block; height: 100%; width: 0; border-radius: 99px; background: linear-gradient(180deg, var(--gold-top), var(--gold)); transition: width .5s cubic-bezier(.2,.9,.3,1.2); }
+  .log { margin-top: 10px; display: grid; gap: 6px; }
+  .log div { padding: 8px 10px; border-radius: 12px; background: var(--tint); }
+  .log .bad { background: var(--bad-tint); color: var(--bad); }
+  .proof { font: 12px/1.6 ui-monospace, Consolas, monospace; word-break: break-all; color: var(--muted); }
+  .proof a { color: var(--green); }
+  .foot { text-align: center; font-size: 13px; margin-top: 18px; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
 <main>
-  <h1>Your Kolo wallet 🐷</h1>
-  <p class="sub">Your fingerprint or face controls this wallet. No password, no seed phrase. Kolo can only spend within the daily limit you approve.</p>
+  <div class="top">
+    <div class="brand"><span class="brand-dot" aria-hidden="true">🐷</span>Kolo</div>
+    <div class="steps" aria-hidden="true"><i class="on"></i><i></i><i></i></div>
+  </div>
 
-  <div class="card">
-    <h2>1. Create wallet</h2>
-    <p>Creates a passkey (fingerprint / face / PIN). Kolo deploys your smart wallet and pays the gas.</p>
-    <button id="create">Create Kolo wallet</button>
-  </div>
-  <div class="card">
-    <h2>2. Approve daily limit</h2>
-    <p>Sign once with your passkey to let the bot spend up to <b id="cap">…</b> ETH per day.</p>
-    <button id="approve" disabled>Approve with passkey</button>
-  </div>
-  <div class="card">
-    <h2>3. Bot pays Chidi</h2>
-    <p>Each tap sends <b id="pay-amount">…</b> ETH without asking you again. The third one goes over the limit.</p>
-    <button id="pay" disabled>Send Chidi a payment</button>
-  </div>
-  <div id="log">Ready.</div>
+  <!-- 1. Welcome -->
+  <section class="screen on card" id="s-welcome">
+    <div class="hero" aria-hidden="true">
+      <svg viewBox="0 0 220 180">
+        <defs>
+          <radialGradient id="pigBody" cx="38%" cy="32%" r="75%"><stop offset="0" stop-color="#ffd5df"/><stop offset=".55" stop-color="#ff8fa8"/><stop offset="1" stop-color="#d9577a"/></radialGradient>
+          <radialGradient id="pigSnout" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#ffc2d0"/><stop offset="1" stop-color="#e8708e"/></radialGradient>
+          <radialGradient id="coinFace" cx="35%" cy="30%" r="80%"><stop offset="0" stop-color="#fff1b8"/><stop offset=".5" stop-color="#f7b733"/><stop offset="1" stop-color="#c27c00"/></radialGradient>
+          <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="5"/></filter>
+        </defs>
+        <ellipse cx="108" cy="166" rx="72" ry="9" fill="#10291d" opacity=".18" filter="url(#soft)"/>
+        <g class="coin">
+          <ellipse cx="112" cy="20" rx="17" ry="17" fill="#c27c00"/>
+          <ellipse cx="110" cy="18" rx="17" ry="17" fill="url(#coinFace)"/>
+          <text x="110" y="24.5" text-anchor="middle" font-family="Bricolage Grotesque, sans-serif" font-weight="800" font-size="18" fill="#9a5f00">₦</text>
+        </g>
+        <g class="pig">
+          <rect x="62" y="128" width="20" height="30" rx="9" fill="#d9577a"/>
+          <rect x="130" y="128" width="20" height="30" rx="9" fill="#d9577a"/>
+          <path d="M182 92 q18 -6 12 10 q-6 12 8 12" fill="none" stroke="#d9577a" stroke-width="5" stroke-linecap="round"/>
+          <ellipse cx="108" cy="98" rx="78" ry="56" fill="url(#pigBody)"/>
+          <path d="M66 52 l-6 -26 l26 14 z" fill="#e8708e"/>
+          <path d="M66 52 l-4 -18 l18 10 z" fill="#ffc2d0"/>
+          <rect x="94" y="46" width="34" height="7" rx="3.5" fill="#a83d5c" opacity=".75"/>
+          <ellipse cx="44" cy="104" rx="20" ry="16" fill="url(#pigSnout)"/>
+          <ellipse cx="38" cy="103" rx="3.4" ry="5" fill="#a83d5c"/>
+          <ellipse cx="50" cy="103" rx="3.4" ry="5" fill="#a83d5c"/>
+          <ellipse cx="66" cy="80" rx="5" ry="6.5" fill="#10291d"/>
+          <ellipse cx="67.6" cy="77.6" rx="1.8" ry="2.2" fill="#fff"/>
+          <ellipse cx="82" cy="70" rx="34" ry="16" fill="#fff" opacity=".28" transform="rotate(-18 82 70)"/>
+          <ellipse cx="80" cy="96" rx="9" ry="5" fill="#ff6f91" opacity=".45"/>
+        </g>
+      </svg>
+    </div>
+    <h1 id="hello">Your group money, safe in your hands</h1>
+    <p class="muted" id="sub">Set up your own Kolo wallet. It takes about 20 seconds.</p>
+    <div class="chips"><span class="chip">No password</span><span class="chip">No seed phrase</span><span class="chip">Free to set up</span></div>
+    <button class="btn" id="start">Get started</button>
+  </section>
+
+  <!-- 2. Daily limit + create -->
+  <section class="screen card" id="s-limit">
+    <h1>Pick your daily limit</h1>
+    <p class="muted">Kolo can pay your group dues and splits up to this amount a day without asking you every time.</p>
+    <div class="tiles" role="radiogroup" aria-label="Daily limit">
+      <label class="tile"><input type="radio" name="limit" value="5000"><span><b>₦5,000</b><br><small>Light: snacks and small dues</small></span><span class="tick">✓</span></label>
+      <label class="tile"><input type="radio" name="limit" value="10000" checked><span><b>₦10,000</b><br><small>Most students pick this</small></span><span class="tick">✓</span></label>
+      <label class="tile"><input type="radio" name="limit" value="20000"><span><b>₦20,000</b><br><small>For class reps and big projects</small></span><span class="tick">✓</span></label>
+    </div>
+    <div class="note"><span>🛡️</span><span>The blockchain itself enforces this limit. Anything bigger always needs your fingerprint, even if someone gets into Kolo.</span></div>
+    <button class="btn" id="create"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 11c0 3.5-.6 6.4-2 8.6"/><path d="M8.2 7.6A5 5 0 0 1 17 11c0 1.7-.1 3.3-.4 4.8"/><path d="M5 9.5A8 8 0 0 1 12 4a8 8 0 0 1 8 8c0 2.6-.4 5-1.1 7"/><path d="M14.6 11.4c.1 3.4-.4 6.4-1.5 8.8"/><path d="M4.2 14.5c.2-1 .3-2 .3-3"/></svg>Create my wallet</button>
+    <div class="status" id="create-status" hidden></div>
+  </section>
+
+  <!-- 3. Lock in the limit -->
+  <section class="screen card" id="s-secure">
+    <div class="print"><div class="pad"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 11c0 3.5-.6 6.4-2 8.6"/><path d="M8.2 7.6A5 5 0 0 1 17 11c0 1.7-.1 3.3-.4 4.8"/><path d="M5 9.5A8 8 0 0 1 12 4a8 8 0 0 1 8 8c0 2.6-.4 5-1.1 7"/><path d="M14.6 11.4c.1 3.4-.4 6.4-1.5 8.8"/><path d="M4.2 14.5c.2-1 .3-2 .3-3"/></svg></div></div>
+    <div class="status"><span class="done-dot">✓</span><span>Wallet created. Kolo paid the setup fee.</span></div>
+    <h1>One more tap to lock it in</h1>
+    <p class="muted">Confirm your <b id="limit-label">₦10,000</b> daily limit with your fingerprint or face. This is the only time you sign it.</p>
+    <button class="btn" id="approve"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="3"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span id="approve-text">Lock in ₦10,000 a day</span></button>
+    <div class="status" id="approve-status" hidden></div>
+  </section>
+
+  <!-- 4. Done -->
+  <section class="screen" id="s-done">
+    <div class="card">
+      <h1>You're in 🎉</h1>
+      <p class="muted" id="done-sub">Your wallet is ready. Head back to WhatsApp, your group has been told.</p>
+      <div class="wallet-card">
+        <div class="wc-row"><span class="wc-brand">🐷 Kolo</span><span class="wc-chip"></span></div>
+        <div class="wc-addr" id="wc-addr">0x0000…0000</div>
+        <div class="wc-row">
+          <div><div class="wc-label">Daily limit</div><div class="wc-limit" id="wc-limit">₦10,000</div></div>
+          <div style="text-align:right"><div class="wc-label">Secured by</div><div>Your fingerprint</div></div>
+        </div>
+      </div>
+      <button class="btn" id="back">Back to WhatsApp</button>
+    </div>
+
+    <details id="demo">
+      <summary>See your limit in action</summary>
+      <div class="dbody">
+        <p class="muted">Kolo makes a few ₦<span id="pay-amt">4,000</span> group payments for you. Watch what happens when one would go over your limit.</p>
+        <div class="meter"><i id="meter"></i></div>
+        <div class="muted" id="meter-text">₦0 of ₦10,000 used today</div>
+        <div style="margin-top:12px"><button class="btn" id="pay">Kolo pays ₦4,000</button></div>
+        <div class="log" id="pay-log"></div>
+      </div>
+    </details>
+    <details>
+      <summary>Technical details</summary>
+      <div class="dbody proof" id="proof"></div>
+    </details>
+  </section>
+
+  <p class="foot muted">Kolo · money in your group chat</p>
 </main>
 
 <script type="module">
@@ -52,12 +245,8 @@
   import { createWebAuthnCredential, toWebAuthnAccount, toCoinbaseSmartAccount } from 'https://esm.sh/viem@2.57.11/account-abstraction'
 
   const $ = (id) => document.getElementById(id)
-  const log = (text, cls) => {
-    const line = document.createElement('div')
-    if (cls) line.className = cls
-    line.textContent = text
-    $('log').append(line)
-  }
+  const naira = (n) => '₦' + Number(n).toLocaleString('en-NG')
+  const token = new URLSearchParams(location.search).get('t') || undefined
   const api = async (path, body = {}) => {
     const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
     const json = await res.json()
@@ -65,35 +254,63 @@
     return json
   }
 
-  let credential, wallet
+  const order = ['s-welcome', 's-limit', 's-secure', 's-done']
+  function show(id) {
+    for (const s of order) $(s).classList.toggle('on', s === id)
+    const step = Math.min(order.indexOf(id), 2)
+    document.querySelectorAll('.steps i').forEach((dot, i) => dot.classList.toggle('on', i <= step))
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  function status(el, text, kind) {
+    el.hidden = false
+    el.className = 'status' + (kind === 'bad' ? ' bad' : '')
+    el.innerHTML = kind === 'busy' ? '<span class="spin"></span>' : kind === 'ok' ? '<span class="done-dot">✓</span>' : '<span>⚠️</span>'
+    el.append(Object.assign(document.createElement('span'), { textContent: text }))
+  }
+  const proof = (label, value) => $('proof').append(Object.assign(document.createElement('div'), { innerHTML: `<b>${label}</b><br>${value}` }))
 
   // A device allows one passkey prompt at a time, so ignore taps while one is open.
   const once = (handler) => async (event) => {
     const button = event.currentTarget
-    if (button.dataset.busy) return
-    button.dataset.busy = '1'
-    try { await handler() } finally { delete button.dataset.busy }
+    if (button.disabled) return
+    button.disabled = true
+    try { await handler() } finally { button.disabled = false }
   }
 
+  let credential, wallet, limit = 10000
+
+  // Greet the person the /join link was made for.
+  if (token) {
+    api('/api/invite', { token }).then((who) => {
+      if (!who.name) return
+      $('hello').textContent = `Hi ${who.name} 👋`
+      $('sub').textContent = `Set up your own Kolo wallet for ${who.group}. It takes about 20 seconds.`
+    }).catch(() => {})
+  }
+
+  $('start').onclick = () => show('s-limit')
+  document.querySelectorAll('input[name=limit]').forEach((r) => (r.onchange = () => (limit = Number(r.value))))
+
   $('create').onclick = once(async () => {
-    $('log').textContent = ''
     try {
+      status($('create-status'), 'Waiting for your fingerprint or face…', 'busy')
       credential = await createWebAuthnCredential({ name: 'Kolo wallet' })
-      log(`passkey created: ${credential.id.slice(0, 16)}…`)
-      // The token from the WhatsApp /join link ties this wallet to you in the group.
-      const token = new URLSearchParams(location.search).get('t') || undefined
-      wallet = await api('/api/wallet', { id: credential.id, publicKey: credential.publicKey, token })
-      log(`wallet ${wallet.address}`, 'ok')
-      log(`deployed (Kolo paid gas): ${wallet.deploy}`)
-      log(`funded: ${wallet.fund}`)
-      $('cap').textContent = wallet.cap
-      $('pay-amount').textContent = wallet.payment
-      $('approve').disabled = false
-    } catch (e) { log(`error: ${e.message}`, 'bad') }
+      status($('create-status'), 'Creating your wallet. Kolo is paying the setup fee…', 'busy')
+      wallet = await api('/api/wallet', { id: credential.id, publicKey: credential.publicKey, token, limit })
+      $('limit-label').textContent = naira(wallet.limit)
+      $('approve-text').textContent = `Lock in ${naira(wallet.limit)} a day`
+      proof('Wallet', wallet.address)
+      proof('Created', wallet.deploy)
+      proof('Funded', wallet.fund)
+      show('s-secure')
+    } catch (e) {
+      status($('create-status'), e.name === 'NotAllowedError' ? 'Cancelled. Tap again when you are ready.' : `Something went wrong: ${e.message}`, 'bad')
+    }
   })
 
   $('approve').onclick = once(async () => {
     try {
+      status($('approve-status'), 'Waiting for your fingerprint or face…', 'busy')
       const client = createPublicClient({ chain: { id: wallet.chainId, name: 'Base Sepolia', nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, rpcUrls: { default: { http: ['/rpc'] } } }, transport: http(location.origin + '/rpc') })
       const owner = toWebAuthnAccount({ credential })
       const account = await toCoinbaseSmartAccount({ client, owners: [owner, wallet.manager], address: wallet.address })
@@ -108,19 +325,44 @@
         primaryType: 'SpendPermission',
         message: { ...p, allowance: BigInt(p.allowance), salt: BigInt(p.salt) },
       })
+      status($('approve-status'), 'Saving your limit on the blockchain…', 'busy')
       const { approve, toldKolo } = await api('/api/approve', { signature })
-      log(`daily limit approved with passkey: ${approve}`, 'ok')
-      if (toldKolo) log('✅ Kolo has told your WhatsApp group. You can close this page.', 'ok')
-      $('pay').disabled = false
-    } catch (e) { log(`error: ${e.message}`, 'bad') }
+      proof('Daily limit signed', approve)
+      finish(toldKolo)
+    } catch (e) {
+      status($('approve-status'), e.name === 'NotAllowedError' ? 'Cancelled. Tap again when you are ready.' : `Something went wrong: ${e.message}`, 'bad')
+    }
   })
 
-  $('pay').onclick = async () => {
+  function finish(toldKolo) {
+    $('wc-addr').textContent = `${wallet.address.slice(0, 6)}…${wallet.address.slice(-4)}`
+    $('wc-limit').textContent = naira(wallet.limit)
+    $('pay-amt').textContent = Number(wallet.payment).toLocaleString('en-NG')
+    $('pay').textContent = `Kolo pays ${naira(wallet.payment)}`
+    $('meter-text').textContent = `₦0 of ${naira(wallet.limit)} used today`
+    $('done-sub').textContent = toldKolo ? 'Your wallet is ready and your WhatsApp group has been told.' : 'Your wallet is ready. Head back to WhatsApp to use it.'
+    show('s-done')
+  }
+
+  $('back').onclick = () => { location.href = 'https://wa.me/' }
+
+  $('pay').onclick = once(async () => {
+    const line = (text, bad) => $('pay-log').prepend(Object.assign(document.createElement('div'), { textContent: text, className: bad ? 'bad' : '' }))
     try {
       const r = await api('/api/pay')
-      if (r.ok) log(`✅ paid Chidi (used today ${r.used} / ${wallet.cap}): ${r.spent}`, 'ok')
-      else log(`❌ blocked on-chain: ${r.reason} (used today ${r.used} / ${wallet.cap})`, 'bad')
-    } catch (e) { log(`error: ${e.message}`, 'bad') }
+      $('meter').style.width = `${Math.min(100, (r.used / wallet.limit) * 100)}%`
+      $('meter-text').textContent = `${naira(r.used)} of ${naira(wallet.limit)} used today`
+      if (r.ok) { line(`✓ Paid ${naira(wallet.payment)} to the group`); proof('Payment', r.spent) }
+      else line(`✋ Blocked by the blockchain: that would go over your ${naira(wallet.limit)} limit. Kolo can't override it.`, true)
+    } catch (e) { line(`Something went wrong: ${e.message}`, true) }
+  })
+
+  // Design preview without a passkey: #preview=limit | secure | done
+  const preview = location.hash.match(/preview=(\w+)/)?.[1]
+  if (preview) {
+    wallet = { address: '0x7a3fC81b2E94d0A6c55E1f0b9D2c4E8a1B6d93E2', limit: 10000, payment: 4000 }
+    if (preview === 'done') finish(true)
+    else show(`s-${preview}`)
   }
 </script>
 </body>
