@@ -40,6 +40,6 @@ Public demo links (free, no account): with the bot on :3117 and the wallet on :3
 
 ## Team
 
-- Kenechukwu Okoye, team lead, product and design
-- Ikenna Excel Ikueze
-- Clinton
+- Kenechukwu Okoye (Koda), team lead: product, design and backend
+- Ikenna Excel Ikueze: architecture
+- Clinton: pitch and business (value proposition, pricing)
