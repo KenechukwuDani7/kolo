@@ -62,7 +62,7 @@ Public demo links (free, no account): with the bot on :3117 and the wallet on :3
 
 Kolo runs 24/7 on an Oracle Cloud Always Free server (Ubuntu 24.04, Arm), so it works without anyone's laptop:
 
-- Website: https://kolo-ng.vercel.app
+- Website: https://kolo-ng.vercel.app (Vercel project `kolo`, root folder `site/`, redeploys on every push to main; rebuild the page with `npx tsx bot/src/build-site.ts`)
 - Wallet sign-up and log-in: https://wallet.84-12-109-77.sslip.io (`/join` links point here)
 - USSD phone: https://kolo-ng.vercel.app/ussd (passed through to the bot)
 
