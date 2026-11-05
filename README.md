@@ -1,8 +1,8 @@
-# Kolo: money in your group chat
+# Kolo: your finance assistant on WhatsApp
 
-**Kolo stops the class rep from being the bank.**
+**Kolo handles money for you and your groups, just by chatting.**
 
-Collecting dues today means dozens of bank transfers, screenshots, a list in someone's notes, weeks of chasing, and the class's money sitting in one person's personal account. Kolo is a bot that lives in the WhatsApp group you already use:
+Collect dues, split bills, pay anyone by Kolo ID or phone number, and keep your own fingerprint wallet, all from WhatsApp, with no app to install. It started with one problem: collecting group money means dozens of bank transfers, screenshots, weeks of chasing, and everyone's money sitting in one person's account. Kolo sits in your chats and does the money work:
 
 - `kolo everybody drop 2k for project` → everyone gets their own **Roqqu pay link**, priced in naira, payable in USDT or BTC.
 - Kolo **ticks each person off automatically** when Roqqu confirms the payment. No screenshots, no "I don pay" on trust.

@@ -51,8 +51,8 @@ const WHATSAPP = `
 
 export const landingPage = (walletUrl: string) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kolo · Money in your group chat</title>
-<meta name="description" content="Kolo is a WhatsApp bot that collects, tracks and spends group money, built on Roqqu.">
+<title>Kolo · Your finance assistant on WhatsApp</title>
+<meta name="description" content="Kolo is a finance assistant on WhatsApp: collect dues, split bills, pay anyone and keep your own wallet, just by chatting. Built on Roqqu.">
 ${FAVICON}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Encode+Sans:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -211,14 +211,14 @@ ${LOGO_SPRITE}
 <header class="hero" id="top"><div class="wrap">
   <div>
     ${animatedLogo()}
-    <span class="eyebrow">WhatsApp · Built on Roqqu</span>
-    <h1>Money in your group chat.</h1>
-    <p class="lead">Kolo is a WhatsApp bot that collects, tracks and spends group money, so the class rep never has to be the bank again.</p>
+    <span class="eyebrow">Finance assistant · WhatsApp · Built on Roqqu</span>
+    <h1>Your finance assistant, inside WhatsApp.</h1>
+    <p class="lead">Kolo handles money for you and your groups: collect dues, split bills, pay anyone and keep your own wallet, just by chatting. No app, no forms.</p>
     <div class="ctas">
-      <a class="btn btn-main" href="#start">${icon('user-plus')}Add Kolo to your group</a>
+      <a class="btn btn-main" href="#start">${icon('user-plus')}Start with Kolo</a>
       <a class="btn btn-alt" href="#how">See how it works</a>
     </div>
-    <div class="pills">${['No app to install', 'Any language', 'Works on USSD', 'Group votes on spending'].map((p) => `<span class="pill-tag">${icon('check')}${p}</span>`).join('')}</div>
+    <div class="pills">${['No app to install', 'For you and your groups', 'Any language', 'Works on USSD'].map((p) => `<span class="pill-tag">${icon('check')}${p}</span>`).join('')}</div>
   </div>
   ${WHATSAPP}
 </div></header>
@@ -340,14 +340,14 @@ ${LOGO_SPRITE}
 <section style="padding-top:0"><div class="wrap">
   <div class="cta">
     ${animatedLogo()}
-    <h2>Stop being the group’s bank.</h2>
+    <h2>Your money, sorted in the chat.</h2>
     <p>Add Kolo to your WhatsApp group: <b>${KOLO_NUMBER}</b></p>
     <div class="ctas"><a class="btn btn-main" href="#start">Get started</a><a class="btn btn-alt" href="/ussd">Try the USSD demo</a></div>
   </div>
 </div></section>
 
 <footer><div class="wrap">
-  <span class="brand">${logo(26)}Kolo · money in your group chat</span>
+  <span class="brand">${logo(26)}Kolo · your finance assistant on WhatsApp</span>
   <span>Kenechukwu Okoye · Ikenna Excel Ikueze · Clinton · Anambra Web3 Conference 3.0</span>
 </div></footer>
 </body></html>`

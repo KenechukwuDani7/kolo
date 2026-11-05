@@ -354,7 +354,7 @@ export class Kolo {
       {
         type: 'dm',
         userId: jid,
-        text: `Hi ${contact.name}! ${msg.sender.name} sent you ${naira(total === amount ? amount : total)} through Kolo, the money bot for WhatsApp groups.\nTo receive it, open your free Kolo wallet with your fingerprint or face (about 20 seconds): ${joinUrl()}/?t=${token}\nNo password, no app to install.`,
+        text: `Hi ${contact.name}! ${msg.sender.name} sent you ${naira(total === amount ? amount : total)} through Kolo, a finance assistant on WhatsApp.\nTo receive it, open your free Kolo wallet with your fingerprint or face (about 20 seconds): ${joinUrl()}/?t=${token}\nNo password, no app to install.`,
       },
     ]
   }
@@ -1446,7 +1446,7 @@ export const FEATURES = {
 } as const
 export type Feature = keyof typeof FEATURES
 
-const HELP = `I keep track of your group's money so nobody has to chase anybody.
+const HELP = `I'm Kolo, your finance assistant on WhatsApp. I handle money for you and your groups: dues, splits, paying anyone, and your own wallet.
 Talk to me normally, starting with "Kolo", or use a shortcut. [brackets] are what you fill in.
 Want me in another group? Save my number and add me like any other member.
 

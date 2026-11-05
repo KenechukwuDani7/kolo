@@ -48,7 +48,7 @@ export type IntentContext = {
   replyingTo?: { kolo: string; asked?: string }
 }
 
-const SYSTEM = `You are the message reader for Kolo, a money bot inside Nigerian WhatsApp group chats (students, friends, class groups).
+const SYSTEM = `You are the message reader for Kolo, a finance assistant on WhatsApp for Nigerians and their groups (students, friends, class groups).
 Read ONE message that mentions Kolo or replies to Kolo, and choose exactly one action. "kolo" can appear anywhere in the message, and "Kolo account" means the sender's Kolo wallet.
 If the message replies to Kolo, combine it with what Kolo said and the earlier message: a short answer like "9k" or "me and Excel" usually completes the earlier request, so return that complete request.
 
@@ -130,7 +130,7 @@ export async function translate(texts: string[], language: string): Promise<stri
   const response = await client.messages.parse({
     model: MODEL,
     max_tokens: 2048,
-    system: `Translate each message from Kolo, a WhatsApp group-money bot, fully into ${language}. Sound like a native speaker texting a friend: natural, plain and calm, not formal and not robotic. Translate every ordinary word, including words like "collection", "each", "paid", "collected", "reply", "pot"; don't leave English words in the sentence. Keep exactly as they are only: people's names, @mentions, amounts like ₦2,000, numbers like 0/3, links, /commands, the word "paid" when it's in quotes (it's a command people type), wallet addresses, references, *bold* markers and line breaks. Don't add emoji or anything that isn't in the original. Return the same number of texts, in the same order.`,
+    system: `Translate each message from Kolo, a finance assistant on WhatsApp, fully into ${language}. Sound like a native speaker texting a friend: natural, plain and calm, not formal and not robotic. Translate every ordinary word, including words like "collection", "each", "paid", "collected", "reply", "pot"; don't leave English words in the sentence. Keep exactly as they are only: people's names, @mentions, amounts like ₦2,000, numbers like 0/3, links, /commands, the word "paid" when it's in quotes (it's a command people type), wallet addresses, references, *bold* markers and line breaks. Don't add emoji or anything that isn't in the original. Return the same number of texts, in the same order.`,
     messages: [{ role: 'user', content: JSON.stringify(texts) }],
     output_config: { format: zodOutputFormat(Translation) },
   })
