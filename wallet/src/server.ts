@@ -16,6 +16,7 @@ import {
   weiToNaira,
   bot,
   chain,
+  isLocal,
   link,
   managerAbi,
   newPermission,
@@ -32,12 +33,10 @@ const PORT = Number(process.env.PORT ?? 3000)
 // Read on every request so edits to the page show up without a restart.
 const page = () => readFileSync(new URL('../public/index.html', import.meta.url), 'utf8')
 
-// One demo user at a time is enough for a spike.
-let permission: SpendPermission | undefined
-// The /join token from the user's WhatsApp DM, so Kolo knows whose wallet this is.
-let joinToken: string | undefined
-// The daily limit the user picked on the page, and the demo payment the bot makes.
-let limitNaira = 10_000
+// Sign-ups between "wallet created" and "limit signed", by wallet address, so several
+// people can join at once. token: the /join link from their WhatsApp DM.
+const signups = new Map<string, { token?: string }>()
+// The demo payment the bot makes from the "You're in" screen.
 const DEMO_PAYMENT_NAIRA = 4_000
 const LIMIT_CHOICES = [5_000, 10_000, 20_000]
 const BOT_URL = process.env.KOLO_BOT_URL ?? 'http://localhost:3117'
@@ -47,7 +46,8 @@ const BOT_URL = process.env.KOLO_BOT_URL ?? 'http://localhost:3117'
 const WALLETS_FILE = 'data/wallets.json'
 // credentialId + publicKey let the owner sign in with their passkey later, Kolo account or not.
 // revoked: Kolo gave up its spend permission (account deleted); the wallet is still the owner's.
-type WalletRecord = { permission: SpendPermission; limitNaira: number; credentialId?: string; publicKey?: Hex; revoked?: boolean }
+// signature: the owner's approval of the permission, kept so it can be replayed if the chain resets.
+type WalletRecord = { permission: SpendPermission; limitNaira: number; credentialId?: string; publicKey?: Hex; revoked?: boolean; signature?: Hex }
 const wallets = new Map<string, WalletRecord>(
   existsSync(WALLETS_FILE)
     ? JSON.parse(readFileSync(WALLETS_FILE, 'utf8')).map(([address, w]: [string, any]) => [
@@ -68,22 +68,27 @@ function byCredential(credentialId: string): [string, WalletRecord] {
 }
 
 // How much of today's limit is spent, what's left, and when the day resets (on-chain truth).
-async function usage(address?: string) {
-  const w = address ? wallets.get(address.toLowerCase()) : permission && wallets.get(permission.account.toLowerCase())
+function walletAt(address?: string) {
+  const w = address && wallets.get(address.toLowerCase())
   if (!w) throw new Error('no Kolo wallet with that address')
+  return w
+}
+
+async function usage(address?: string) {
+  const w = walletAt(address)
   const period = await publicClient.readContract({ address: SPEND_PERMISSION_MANAGER, abi: managerAbi, functionName: 'getCurrentPeriod', args: [w.permission] })
   const used = weiToNaira(period.spend)
   return { used, limit: w.limitNaira, left: Math.max(0, w.limitNaira - used), resetsAt: Number(period.end) * 1000 }
 }
 
 // Tell the WhatsApp bot the wallet is ready; it announces it in the group.
-async function tellKolo(address: Address) {
-  if (!joinToken) return false
+async function tellKolo(address: Address, token: string | undefined, limitNaira: number) {
+  if (!token) return false
   try {
     const res = await fetch(`${BOT_URL}/wallet/registered`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token: joinToken, address, dailyLimit: `₦${limitNaira.toLocaleString('en-NG')}` }),
+      body: JSON.stringify({ token, address, dailyLimit: `₦${limitNaira.toLocaleString('en-NG')}` }),
     })
     return res.ok
   } catch {
@@ -94,8 +99,8 @@ const chidi = privateKeyToAccount(generatePrivateKey()).address
 
 let payQueue: Promise<unknown> = Promise.resolve()
 
-async function pay() {
-  if (!permission) throw new Error('create a wallet first')
+async function pay(address: string) {
+  const { permission } = walletAt(address)
   // Check against the contract first so a cap rejection is reported as exactly that.
   try {
     await publicClient.simulateContract({
@@ -136,16 +141,16 @@ const routes: Record<string, (body: any) => Promise<unknown>> = {
   },
 
   async '/api/wallet'({ id, publicKey, token, limit }: { id: string; publicKey: Hex; token?: string; limit?: number }) {
-    joinToken = token || undefined
-    limitNaira = LIMIT_CHOICES.includes(Number(limit)) ? Number(limit) : 10_000
+    const limitNaira = LIMIT_CHOICES.includes(Number(limit)) ? Number(limit) : 10_000
     // The passkey's credential id + public key are all the backend ever sees.
     const passkey = toWebAuthnAccount({ credential: { id, publicKey } })
     const wallet = await toCoinbaseSmartAccount({ client: publicClient, owners: [passkey, SPEND_PERMISSION_MANAGER] })
     const { factory, factoryData } = await wallet.getFactoryArgs()
     const deploy = await send({ to: factory!, data: factoryData! })
     const fund = await send({ to: wallet.address, value: WALLET_FUNDING })
-    permission = newPermission(wallet.address, nairaToWei(limitNaira))
+    const permission = newPermission(wallet.address, nairaToWei(limitNaira))
     wallets.set(wallet.address.toLowerCase(), { permission, limitNaira, credentialId: id, publicKey })
+    signups.set(wallet.address.toLowerCase(), { token: token || undefined })
     saveWallets()
     return {
       address: wallet.address,
@@ -159,10 +164,14 @@ const routes: Record<string, (body: any) => Promise<unknown>> = {
     }
   },
 
-  async '/api/approve'({ signature }: { signature: Hex }) {
-    if (!permission) throw new Error('create a wallet first')
-    const approve = await approveWithSignature(permission, signature)
-    return { approve: link(approve.hash), toldKolo: await tellKolo(permission.account) }
+  async '/api/approve'({ address, signature }: { address: string; signature: Hex }) {
+    const w = walletAt(address)
+    const approve = await approveWithSignature(w.permission, signature)
+    w.signature = signature
+    saveWallets()
+    const signup = signups.get(address.toLowerCase())
+    signups.delete(address.toLowerCase())
+    return { approve: link(approve.hash), toldKolo: await tellKolo(w.permission.account, signup?.token, w.limitNaira) }
   },
 
   // Owner's name and Kolo balance, and top-up links, come from the bot.
@@ -210,9 +219,9 @@ const routes: Record<string, (body: any) => Promise<unknown>> = {
     return usage(address)
   },
 
-  '/api/pay'() {
+  '/api/pay'({ address }: { address: string }) {
     // One payment at a time, so the cap check below sees every earlier spend.
-    const run = payQueue.then(pay)
+    const run = payQueue.then(() => pay(address))
     payQueue = run.catch(() => {})
     return run
   },
@@ -224,7 +233,34 @@ const routes: Record<string, (body: any) => Promise<unknown>> = {
   },
 }
 
+// The local test chain lives in memory, so a restart (or a server reboot) wipes every
+// wallet on it. Put them back: the same passkey gives the same address, and the owner's
+// saved signature re-approves Kolo's daily limit. Balances restart at the setup amount.
+async function restoreWallets() {
+  if (!isLocal) return
+  let restored = 0
+  for (const [address, w] of wallets) {
+    if (!w.credentialId || !w.publicKey) continue
+    const code = await publicClient.getCode({ address: address as Address })
+    if (code && code !== '0x') continue
+    try {
+      const passkey = toWebAuthnAccount({ credential: { id: w.credentialId, publicKey: w.publicKey } })
+      const wallet = await toCoinbaseSmartAccount({ client: publicClient, owners: [passkey, SPEND_PERMISSION_MANAGER] })
+      if (wallet.address.toLowerCase() !== address) continue
+      const { factory, factoryData } = await wallet.getFactoryArgs()
+      await send({ to: factory!, data: factoryData! })
+      await send({ to: wallet.address, value: WALLET_FUNDING })
+      if (w.signature && !w.revoked) await approveWithSignature(w.permission, w.signature)
+      restored++
+    } catch (error: any) {
+      console.warn(`could not restore wallet ${address}:`, error?.shortMessage ?? error)
+    }
+  }
+  if (restored) console.log(`Restored ${restored} wallet(s) after a test-chain restart`)
+}
+
 await prepareLocalFork()
+await restoreWallets()
 
 createServer(async (req, res) => {
   // Revoking is for the bot on this machine only. Anything through the public HTTPS

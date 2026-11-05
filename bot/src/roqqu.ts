@@ -35,6 +35,8 @@ let outage = false
 export const setOutage = (on: boolean) => {
   outage = on
 }
+export const outageOn = () => outage
+export const notAnswering = (what: string) => down(`${what}: not answering (outage drill)`)
 
 async function call<T>(method: 'GET' | 'POST', path: string, body?: Record<string, unknown>): Promise<T> {
   if (outage) throw down(`Roqqu ${path}: not answering (outage drill)`)
@@ -134,9 +136,18 @@ export async function send(opts: { amount: number; token: string; network: strin
   return data.refid
 }
 
+// Naira per dollar from Roqqu, or the last rate seen (₦1,375 to start) when /rates
+// fails, which it has done in the sandbox ("Request failed with status code 403").
+let lastRate = Number(process.env.ROQQU_FALLBACK_RATE ?? 1375)
 export async function nairaPerDollar(): Promise<number> {
-  const rates = await call<{ symbol: string; rate: number }[]>('GET', '/rates')
-  return rates.find((r) => r.symbol === 'ngn')?.rate ?? 0
+  try {
+    const rates = await call<{ symbol: string; rate: number }[]>('GET', '/rates')
+    const ngn = rates.find((r) => r.symbol === 'ngn')?.rate
+    if (ngn) lastRate = ngn
+  } catch (error) {
+    if (outage) throw error
+  }
+  return lastRate
 }
 
 // Webhook bodies arrive as { hash } encrypted with aes-256-ctr: key = the first 32

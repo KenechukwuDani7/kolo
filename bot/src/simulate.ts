@@ -95,7 +95,7 @@ if (usePay) {
   await dial('1')
   await dial('1*1')
   await dial('1*1*0000')
-  await dial('1*1*1234')
+  await dial('1*1*4821')
   await dial('2')
   await dial('3')
   await dial('1')

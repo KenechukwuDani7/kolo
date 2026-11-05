@@ -58,6 +58,10 @@ Environment="KOLO_GROUPS=Kolo Test"
 Environment=TEST_OWN_MESSAGES=1
 Environment=JOIN_URL=https://$WALLET_HOST
 Environment=WALLET_URL=http://localhost:3116
+# Roqqu's sandbox stopped making payment links and blocks cloud servers, so pay links
+# use Kolo's own test checkout at KOLO_URL/pay/... (set ROQQU_MODE=live to use Roqqu).
+Environment=ROQQU_MODE=simulate
+Environment=KOLO_URL=https://$KOLO_HOST
 ExecStart=$NPM run whatsapp
 Restart=always
 RestartSec=5

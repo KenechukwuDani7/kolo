@@ -37,7 +37,7 @@ export const USSD_PAGE = `<!doctype html>
   <div class="intro">
     <h1>Kolo on USSD 🐷</h1>
     <p>No data, low battery or no smartphone? Dial Kolo like a bank code and still pay your group dues. The WhatsApp group sees it instantly.</p>
-    <p>Enter the WhatsApp number you use in the group, dial <code>${USSD_CODE}</code>, and use PIN <code>1234</code> for this demo.</p>
+    <p>Enter the WhatsApp number you use in the group, dial <code>${USSD_CODE}</code>, and create your own 4-digit PIN the first time you pay.</p>
     <p style="font-size:13px">Prototype: a live shortcode needs a telco or Africa's Talking. This screen talks to Kolo the same way they would.</p>
   </div>
   <div class="phone"><div class="screen">

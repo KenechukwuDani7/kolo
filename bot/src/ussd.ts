@@ -1,6 +1,6 @@
 // USSD menu for Kolo, in Africa's Talking's format: each request carries the phone
-// number and `text`, every answer so far joined by "*" ("" → menu, "1*2*1234" → pay
-// the 2nd due with PIN 1234). Replies start with "CON " (expects input) or "END ".
+// number and `text`, every answer so far joined by "*" ("" → menu, "1*2*4821" → pay
+// the 2nd due with PIN 4821). Replies start with "CON " (expects input) or "END ".
 // Screens stay short: USSD shows about 160 characters at a time.
 import type { Action, Kolo, Member } from './kolo.js'
 
@@ -12,8 +12,10 @@ export type UssdDeps = {
   perform(actions: Action[]): Promise<void>
 }
 
-// Prototype PIN. A real build would set it on first use and lock after 3 wrong tries.
-export const DEMO_PIN = '1234'
+// Each member creates their own 4-digit PIN the first time they pay. Three wrong tries
+// lock paying for 30 minutes. (On a real USSD line the phone number comes from the
+// network, so the PIN is the second factor; in the simulator anyone can type a number.)
+const tries = new Map<string, { wrong: number; lockedUntil: number }>()
 const naira = (n: number) => `N${n.toLocaleString('en-NG')}`
 
 export async function ussd(phoneNumber: string, text: string, deps: UssdDeps): Promise<string> {
@@ -41,8 +43,23 @@ export async function ussd(phoneNumber: string, text: string, deps: UssdDeps): P
   }
   const due = dues[Number(pick) - 1]
   if (!due) return 'END Invalid choice. Dial again.'
-  if (!pin) return `CON Pay ${naira(due.amount)} for ${due.title.slice(0, 24)} from your Kolo balance.\nEnter PIN:`
-  if (pin !== DEMO_PIN) return 'END Wrong PIN. Nothing was paid.'
+  const firstTime = !deps.kolo.hasPin(member.id)
+  if (!pin) {
+    return `CON Pay ${naira(due.amount)} for ${due.title.slice(0, 24)} from your Kolo balance.\n${firstTime ? 'First time: create a 4-digit Kolo PIN:' : 'Enter your Kolo PIN:'}`
+  }
+  if (!/^\d{4}$/.test(pin)) return 'END A Kolo PIN is 4 digits. Nothing was paid.'
+  const t = tries.get(member.id) ?? { wrong: 0, lockedUntil: 0 }
+  if (t.lockedUntil > Date.now()) return 'END Too many wrong PINs. Try again in 30 minutes.'
+  if (firstTime) {
+    if (/^(\d)\1{3}$|^(1234|4321|0000)$/.test(pin)) return 'END That PIN is too easy to guess. Dial again and pick another.'
+    deps.kolo.setPin(member.id, pin)
+  } else if (!deps.kolo.checkPin(member.id, pin)) {
+    t.wrong++
+    if (t.wrong >= 3) Object.assign(t, { wrong: 0, lockedUntil: Date.now() + 30 * 60_000 })
+    tries.set(member.id, t)
+    return t.lockedUntil > Date.now() ? 'END Wrong PIN. Paying is locked for 30 minutes.' : `END Wrong PIN. Nothing was paid. ${3 - t.wrong} tries left.`
+  }
+  tries.delete(member.id)
 
   const result = deps.kolo.payFromBalance(due.chatId, member.id)
   if (!result.ok) return `END ${result.reason}`

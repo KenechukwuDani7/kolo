@@ -8,6 +8,7 @@ import { createServer } from 'node:http'
 import QRCode from 'qrcode'
 import makeWASocket, {
   Browsers,
+  BufferJSON,
   DisconnectReason,
   decryptPollVote,
   fetchLatestBaileysVersion,
@@ -22,6 +23,7 @@ import pino from 'pino'
 import qrcode from 'qrcode-terminal'
 import { Kolo, isAddressed, type Action, type Incoming, type Member, type Payments, type WalletInfo } from './kolo.js'
 import { createPaymentLink, decryptWebhook, deposits, generateWallet, nairaPerDollar, roqquEnabled, send, setOutage } from './roqqu.js'
+import { checkoutPage, simLinks, simulatedPayments } from './sim-pay.js'
 import { ussd } from './ussd.js'
 import { USSD_PAGE } from './ussd-page.js'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -36,12 +38,19 @@ const ai = process.env.AWS_BEARER_TOKEN_BEDROCK || process.env.AWS_ACCESS_KEY_ID
 const reader = ai?.readIntent
 
 // Roqqu pay links are on when a Roqqu test key is present (.env).
-// Pay links not yet confirmed: reference → the link's deposit addresses and when it was made.
-const pendingLinks = new Map<string, { addresses: string[]; since: number }>()
+// Pay links not yet confirmed: reference → the link's deposit addresses, when it was made,
+// its naira price, who it's for, and whether they were already told it was underpaid.
+const pendingLinks = new Map<string, { addresses: string[]; since: number; naira?: number; memberId?: string; short?: boolean }>()
 // Each member's Roqqu USDT (BSC) address, made the first time the pot pays them.
 const payoutAddresses = new Map<string, string>()
 const emailFor = (member: Member) => `${member.id.split('@')[0].replace(/\D/g, '')}@kolo-demo.app`
-const payments: Payments | undefined = roqquEnabled
+// live: Roqqu's API. simulate: Kolo's own test checkout (sim-pay.ts), for when Roqqu's
+// sandbox can't be used. The rest of Kolo works the same either way.
+const SIMULATE = process.env.ROQQU_MODE === 'simulate'
+if (SIMULATE) console.log('Payments: Kolo test checkout (ROQQU_MODE=simulate)')
+const payments: Payments | undefined = SIMULATE
+  ? simulatedPayments
+  : roqquEnabled
   ? {
       async link({ chatId, member, amount, title }) {
         const reference = `K${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.toUpperCase()
@@ -52,7 +61,7 @@ const payments: Payments | undefined = roqquEnabled
           email: emailFor(member),
           metadata: { group: chatId, member: member.id, title },
         })
-        pendingLinks.set(link.reference, { addresses: link.addresses, since: Date.now() })
+        pendingLinks.set(link.reference, { addresses: link.addresses, since: Date.now(), naira: amount, memberId: member.id })
         return { reference: link.reference, url: link.url }
       },
       // The pot is held as USDT on Roqqu; convert the naira amount at Roqqu's live rate.
@@ -104,11 +113,12 @@ if (existsSync(STATE_FILE)) {
   kolo.restore(saved.kolo)
   for (const [ref, link] of saved.pendingLinks ?? []) pendingLinks.set(ref, link)
   for (const [id, address] of saved.payoutAddresses ?? []) payoutAddresses.set(id, address)
+  for (const [ref, link] of saved.simLinks ?? []) simLinks.set(ref, link)
   console.log(`Restored ${saved.kolo.collections.length} collection(s) and ${pendingLinks.size} open pay link(s)`)
 }
 function saveState() {
   mkdirSync('data', { recursive: true })
-  writeFileSync(STATE_FILE, JSON.stringify({ kolo: kolo.snapshot(), pendingLinks: [...pendingLinks], payoutAddresses: [...payoutAddresses] }, null, 1))
+  writeFileSync(STATE_FILE, JSON.stringify({ kolo: kolo.snapshot(), pendingLinks: [...pendingLinks], payoutAddresses: [...payoutAddresses], simLinks: [...simLinks], polls: savedPolls() }, null, 1))
 }
 
 // USSD: a caller's phone number → their member id in the group, and group names for menus.
@@ -157,14 +167,28 @@ async function paymentConfirmed(reference: string, via: string) {
 const creditedDeposits = new Set<string>()
 const watchStarted = Date.now()
 setInterval(async () => {
-  if (!pendingLinks.size && !kolo.snapshot().groupAccounts.length) return
+  if (SIMULATE || (!pendingLinks.size && !kolo.snapshot().groupAccounts.length)) return
   try {
     const seen = await deposits()
-    for (const [reference, link] of pendingLinks) {
-      const paid = seen.some((d) => link.addresses.includes(d.address) && Date.parse(d.createdAt) >= link.since - 60_000)
-      if (paid) await paymentConfirmed(reference, 'deposit watch')
-    }
     const rate = await nairaPerDollar()
+    for (const [reference, link] of pendingLinks) {
+      const landed = seen.filter((d) => link.addresses.includes(d.address) && Date.parse(d.createdAt) >= link.since - 60_000)
+      if (!landed.length) continue
+      // Dollar coins are checked against the price: an underpaid link is not a payment.
+      // (BTC is taken as paid for now; its naira value needs a BTC rate.)
+      const dollars = landed.filter((d) => ['usdt', 'usdc'].includes(d.token.toLowerCase()))
+      const got = Math.round(dollars.reduce((sum, d) => sum + d.value, 0) * rate)
+      if (link.naira && dollars.length === landed.length && got < link.naira * 0.97) {
+        if (!link.short && link.memberId) {
+          link.short = true
+          const missing = `₦${(link.naira - got).toLocaleString('en-NG')}`
+          await performNow?.([{ type: 'dm', userId: link.memberId, text: `🐷 *Kolo*\nRoqqu shows ₦${got.toLocaleString('en-NG')} of ₦${link.naira.toLocaleString('en-NG')} on your link, so I haven't ticked you yet. Send the remaining ${missing} to the same link and I'll tick you then.` }])
+          saveState()
+        }
+        continue
+      }
+      await paymentConfirmed(reference, 'deposit watch')
+    }
     for (const d of seen) {
       if (creditedDeposits.has(d.hash) || Date.parse(d.createdAt) < watchStarted - 60_000) continue
       // USDT/USDC are dollars; other coins are left out of the naira pot for now.
@@ -201,6 +225,13 @@ const logger = pino({ level: process.env.LOG_LEVEL ?? 'warn' })
 
 // Poll creation messages Kolo sent: needed to decrypt votes, which arrive encrypted.
 const polls = new Map<string, { pollId: string; message: proto.IMessage; options: string[]; votes: Map<string, string[]> }>()
+// Saved with the rest of the state (the poll's secret key is binary, hence BufferJSON),
+// so a spend vote still counts after a restart.
+const savedPolls = () => JSON.parse(JSON.stringify([...polls].map(([id, p]) => [id, { ...p, votes: [...p.votes] }]), BufferJSON.replacer))
+if (existsSync(STATE_FILE)) {
+  const saved = JSON.parse(readFileSync(STATE_FILE, 'utf8'))
+  for (const [id, p] of JSON.parse(JSON.stringify(saved.polls ?? []), BufferJSON.reviver)) polls.set(id, { ...p, votes: new Map(p.votes) })
+}
 // Group member ids, and the display names people have shown while chatting.
 const groupMembers = new Map<string, string[]>()
 const names = new Map<string, string>()
@@ -250,6 +281,39 @@ createServer(async (req, res) => {
       return 'END Kolo is busy. Please try again.'
     })
     res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end(reply)
+    return
+  }
+  // Kolo's test checkout (ROQQU_MODE=simulate): the page, and its Completed / Underpaid / Failed buttons.
+  const pay = req.url?.match(/^\/pay\/([A-Z0-9]+)$/)
+  if (pay && req.method === 'GET') {
+    const page = checkoutPage(pay[1])
+    res.writeHead(page ? 200 : 404, { 'content-type': 'text/html; charset=utf-8' }).end(page ?? 'This payment link does not exist.')
+    return
+  }
+  if (pay && req.method === 'POST') {
+    let body = ''
+    for await (const chunk of req) body += chunk
+    const link = simLinks.get(pay[1])
+    const result = (() => { try { return JSON.parse(body).result } catch { return '' } })()
+    if (!link || link.state === 'paid' || !['completed', 'underpaid', 'failed'].includes(result)) {
+      res.writeHead(400).end()
+      return
+    }
+    const dm = (text: string) => performNow?.([{ type: 'dm', userId: link.memberId, text: `🐷 *Kolo*\n${text}` }])
+    if (result === 'completed') {
+      link.state = 'paid'
+      console.log(`test checkout paid: ${pay[1]}`)
+      await performNow?.(kolo.confirmPayment(pay[1], 'Roqqu (test checkout)'))
+    } else if (result === 'underpaid') {
+      link.state = 'underpaid'
+      const got = Math.round(link.naira / 2)
+      await dm(`Roqqu shows ₦${got.toLocaleString('en-NG')} of ₦${link.naira.toLocaleString('en-NG')} on your link, so I haven't ticked you yet. Send the remaining ₦${(link.naira - got).toLocaleString('en-NG')} to the same link and I'll tick you then.`)
+    } else {
+      link.state = 'failed'
+      await dm(`Your payment for ${link.title} didn't go through, and nothing was taken. Your link still works: ${process.env.KOLO_URL ?? ''}/pay/${pay[1]}`)
+    }
+    saveState()
+    res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}')
     return
   }
   // The wallet page asks who a /join link is for, to greet them by name, and for Kolo's

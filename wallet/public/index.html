@@ -410,7 +410,7 @@
         message: { ...p, allowance: BigInt(p.allowance), salt: BigInt(p.salt) },
       })
       status($('approve-status'), 'Saving your limit on the blockchain…', 'busy')
-      const { approve, toldKolo } = await api('/api/approve', { signature })
+      const { approve, toldKolo } = await api('/api/approve', { address: wallet.address, signature })
       proof('Daily limit signed', approve)
       finish(toldKolo)
     } catch (e) {
@@ -564,7 +564,7 @@
   $('pay').onclick = once(async () => {
     const line = (text, bad) => $('pay-log').prepend(Object.assign(document.createElement('div'), { textContent: text, className: bad ? 'bad' : '' }))
     try {
-      const r = await api('/api/pay')
+      const r = await api('/api/pay', { address: wallet.address })
       await refreshUsage()
       if (r.ok) { line(`✓ Paid ${naira(wallet.payment)} to the group`); proof('Payment', r.spent) }
       else line(`✋ Blocked by the blockchain: that would go over your ${naira(wallet.limit)} limit. Kolo can't override it.`, true)
