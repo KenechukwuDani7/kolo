@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/ussd",
+      "destination": "https://kolo.84-12-109-77.sslip.io/ussd"
+    }
+  ]
+}

@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kolo · Money in your group chat</title>
+<meta name="description" content="Kolo is a WhatsApp bot that collects, tracks and spends group money, built on Roqqu.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Cdefs%3E%0A%3CradialGradient%20id%3D%22kl-body%22%20cx%3D%2234%25%22%20cy%3D%2228%25%22%20r%3D%2278%25%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23ffe3ea%22%2F%3E%3Cstop%20offset%3D%22.45%22%20stop-color%3D%22%23ff98b0%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23cf4a70%22%2F%3E%3C%2FradialGradient%3E%0A%3CradialGradient%20id%3D%22kl-snout%22%20cx%3D%2240%25%22%20cy%3D%2230%25%22%20r%3D%2280%25%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23ffc2d0%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23e2668a%22%2F%3E%3C%2FradialGradient%3E%0A%3ClinearGradient%20id%3D%22kl-ear%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%221%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23ff9fb5%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23d9577a%22%2F%3E%3C%2FlinearGradient%3E%0A%3ClinearGradient%20id%3D%22kl-leg%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%220%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23f27d9a%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23c94a6c%22%2F%3E%3C%2FlinearGradient%3E%0A%3CradialGradient%20id%3D%22kl-coin%22%20cx%3D%2235%25%22%20cy%3D%2230%25%22%20r%3D%2280%25%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23fff1b8%22%2F%3E%3Cstop%20offset%3D%22.5%22%20stop-color%3D%22%23f7b733%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23c27c00%22%2F%3E%3C%2FradialGradient%3E%3C%2Fdefs%3E%0A%3Cellipse%20cx%3D%2233%22%20cy%3D%2258.5%22%20rx%3D%2221%22%20ry%3D%222.6%22%20fill%3D%22%237a1d3a%22%20opacity%3D%22.18%22%2F%3E%0A%3Crect%20x%3D%2241%22%20y%3D%2243%22%20width%3D%227%22%20height%3D%2213%22%20rx%3D%223.2%22%20fill%3D%22url(%23kl-leg)%22%2F%3E%0A%3Crect%20x%3D%2218%22%20y%3D%2243%22%20width%3D%227%22%20height%3D%2213%22%20rx%3D%223.2%22%20fill%3D%22url(%23kl-leg)%22%2F%3E%0A%3Crect%20x%3D%2241%22%20y%3D%2253%22%20width%3D%227%22%20height%3D%223%22%20rx%3D%221.5%22%20fill%3D%22%23a83558%22%2F%3E%0A%3Crect%20x%3D%2218%22%20y%3D%2253%22%20width%3D%227%22%20height%3D%223%22%20rx%3D%221.5%22%20fill%3D%22%23a83558%22%2F%3E%0A%3Cpath%20d%3D%22M54%2032c4.5-1.6%207%201.8%205%204.2-1.8%202.2-4.6.6-3-1.6%22%20fill%3D%22none%22%20stroke%3D%22%23d9577a%22%20stroke-width%3D%222.2%22%20stroke-linecap%3D%22round%22%2F%3E%0A%3Cpath%20d%3D%22M18.5%2024%2018%2012.5%2026%2019z%22%20fill%3D%22%23c94a6c%22%2F%3E%0A%3Cg%20class%3D%22logo-coin%22%3E%3Ccircle%20cx%3D%2241.6%22%20cy%3D%2213.4%22%20r%3D%226.6%22%20fill%3D%22%23b06e00%22%2F%3E%3Ccircle%20cx%3D%2241%22%20cy%3D%2212.8%22%20r%3D%226.6%22%20fill%3D%22url(%23kl-coin)%22%2F%3E%0A%3Ctext%20x%3D%2241%22%20y%3D%2215.6%22%20text-anchor%3D%22middle%22%20font-family%3D%22Encode%20Sans%2C%20Arial%2C%20sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%228%22%20fill%3D%22%238a5300%22%3E%E2%82%A6%3C%2Ftext%3E%3C%2Fg%3E%0A%3Cellipse%20cx%3D%2234%22%20cy%3D%2235%22%20rx%3D%2221.5%22%20ry%3D%2216.5%22%20fill%3D%22url(%23kl-body)%22%2F%3E%0A%3Cellipse%20cx%3D%2235%22%20cy%3D%2245.5%22%20rx%3D%2217%22%20ry%3D%225.5%22%20fill%3D%22%23a83558%22%20opacity%3D%22.16%22%2F%3E%0A%3Cpath%20d%3D%22M22%2022.5%2023.5%209.5l8.5%209.5z%22%20fill%3D%22url(%23kl-ear)%22%2F%3E%0A%3Cpath%20d%3D%22M23.6%2020.2%2024.4%2013l4.8%205.4z%22%20fill%3D%22%23ffc7d3%22%2F%3E%0A%3Cellipse%20cx%3D%2213.6%22%20cy%3D%2236%22%20rx%3D%225.4%22%20ry%3D%226.6%22%20fill%3D%22url(%23kl-snout)%22%2F%3E%0A%3Cellipse%20cx%3D%2211%22%20cy%3D%2236%22%20rx%3D%223.3%22%20ry%3D%225%22%20fill%3D%22%23f07a96%22%2F%3E%0A%3Cellipse%20cx%3D%2210.2%22%20cy%3D%2234.2%22%20rx%3D%22.95%22%20ry%3D%221.4%22%20fill%3D%22%239e2f50%22%2F%3E%0A%3Cellipse%20cx%3D%2210.2%22%20cy%3D%2237.9%22%20rx%3D%22.95%22%20ry%3D%221.4%22%20fill%3D%22%239e2f50%22%2F%3E%0A%3Cellipse%20cx%3D%2222.5%22%20cy%3D%2228.6%22%20rx%3D%222.1%22%20ry%3D%222.7%22%20fill%3D%22%232a141c%22%2F%3E%0A%3Ccircle%20cx%3D%2223.2%22%20cy%3D%2227.7%22%20r%3D%22.8%22%20fill%3D%22%23fff%22%2F%3E%0A%3Cellipse%20cx%3D%2221.5%22%20cy%3D%2236.2%22%20rx%3D%223.6%22%20ry%3D%222%22%20fill%3D%22%23ff6f91%22%20opacity%3D%22.35%22%2F%3E%0A%3Crect%20x%3D%2235%22%20y%3D%2219.4%22%20width%3D%2212%22%20height%3D%222.8%22%20rx%3D%221.4%22%20fill%3D%22%238f2a4a%22%2F%3E%0A%3Cellipse%20cx%3D%2231%22%20cy%3D%2225.5%22%20rx%3D%2211%22%20ry%3D%224.6%22%20fill%3D%22%23fff%22%20opacity%3D%22.38%22%20transform%3D%22rotate(-14%2031%2025.5)%22%2F%3E%3C%2Fsvg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Encode+Sans:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { color-scheme: light; --ink:#2a141c; --muted:#6b5258; --bg:#fffafb; --tint:#fff0f3; --card:#fff; --line:#f6e4e8; --rose:#f2486e; --rose-top:#ff6f91; --rose-deep:#c92d55; }
+  * { box-sizing: border-box }
+  html { scroll-behavior: smooth }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 400 17px/1.6 "Inter", system-ui, sans-serif; }
+  h1, h2, h3, .brand { font-family: "Encode Sans", system-ui, sans-serif; letter-spacing: -.02em; margin: 0; }
+  a { color: inherit }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+  .eyebrow { font-weight: 700; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--rose-deep); }
+  .muted { color: var(--muted) }
+  .ic { width: 24px; height: 24px; flex: none; }
+
+  nav { position: sticky; top: 0; z-index: 5; background: rgba(255,250,251,.88); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 68px; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 24px; text-decoration: none; }
+  .links { display: flex; gap: 24px; font-weight: 600; font-size: 15px; }
+  .links a { text-decoration: none; color: var(--muted) }
+  .links a:hover { color: var(--ink) }
+  .navbtn { display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--card); color: var(--rose-deep); font: 700 15px "Inter", sans-serif; text-decoration: none; }
+  .navbtn .ic { width: 18px; height: 18px; }
+
+  .btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 16px; padding: 14px 22px; font: 700 16px "Inter", sans-serif; text-decoration: none; border: 0; cursor: pointer; }
+  .btn .ic { width: 20px; height: 20px; }
+  .btn-main { background: linear-gradient(180deg, var(--rose-top), var(--rose)); color: #fff; box-shadow: 0 14px 30px -14px rgba(242,72,110,.7); }
+  .btn-alt { background: var(--card); color: var(--rose-deep); border: 1.5px solid var(--line); }
+
+  .hero { background: radial-gradient(circle at 10% 0%, #ffe3ea, var(--bg) 55%); overflow: hidden; }
+  .hero .wrap { display: grid; grid-template-columns: 1.1fr .9fr; gap: 48px; align-items: center; padding-top: 48px; padding-bottom: 80px; }
+  .hero .wrap > *, .roqqu > * { min-width: 0; }
+  .pig-anim { width: 150px; height: auto; display: block; margin: 0 0 4px -10px; overflow: visible; animation: bob 2.6s ease-in-out infinite; transform-origin: 50% 90%; }
+  .pig-anim .logo-coin { animation: drop 2.6s cubic-bezier(.5, 0, .5, 1) infinite; }
+  @keyframes drop { 0%, 12% { transform: translateY(-16px); opacity: 0; } 28% { opacity: 1; } 70% { transform: translateY(9px); opacity: 1; } 84%, 100% { transform: translateY(14px); opacity: 0; } }
+  @keyframes bob { 0%, 62%, 100% { transform: scale(1); } 74% { transform: scale(1.04, .96); } }
+  .hero h1 { font-size: clamp(42px, 6vw, 72px); font-weight: 800; line-height: 1.02; margin: 12px 0 18px; }
+  .hero p.lead { font-size: 20px; color: var(--muted); max-width: 540px; margin: 0 0 28px; }
+  .ctas { display: flex; flex-wrap: wrap; gap: 12px; }
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 26px; }
+  .pill-tag { display: inline-flex; align-items: center; gap: 6px; background: var(--card); border: 1px solid var(--line); border-radius: 99px; padding: 6px 14px 6px 10px; font-size: 14px; font-weight: 600; }
+  .pill-tag .ic { width: 16px; height: 16px; color: var(--rose); stroke-width: 3; }
+
+  /* ── WhatsApp (Android, light) ── */
+  .phone { justify-self: end; width: 100%; max-width: 380px; padding: 11px; border-radius: 46px; background: #1b1b1f; box-shadow: 0 0 0 2px #3a3a40, 0 50px 90px -40px rgba(80,10,30,.55); }
+  .screen { border-radius: 36px; overflow: hidden; background: #efeae2; display: flex; flex-direction: column; height: 680px; font-family: Roboto, "Segoe UI", system-ui, sans-serif; }
+  .sbar { display: flex; justify-content: space-between; align-items: center; padding: 10px 22px 6px; background: #008069; color: #fff; font: 600 13px system-ui, sans-serif; }
+  .sicons { display: flex; gap: 5px } .si { width: 15px; height: 15px; }
+  .wa-head { display: flex; align-items: center; gap: 10px; padding: 6px 12px 10px 8px; background: #008069; color: #fff; }
+  .hi { width: 21px; height: 21px; flex: none; }
+  .gav { width: 38px; height: 38px; border-radius: 50%; background: #dfe5e7; color: #fff; display: grid; place-items: center; flex: none; background: linear-gradient(135deg, #ffb3c4, #f2486e); }
+  .gi { width: 20px; height: 20px; }
+  .gname { flex: 1; min-width: 0; line-height: 1.25; } .gname b { display: block; font-size: 16px; font-weight: 500; }
+  .gname small { display: block; font-size: 12.5px; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wa-head .hi + .hi { margin-left: 8px; }
+  .wa-body { flex: 1; min-height: 0; padding: 10px 10px 6px; display: flex; flex-direction: column; justify-content: flex-end; gap: 3px; overflow: hidden;
+    background-color: #efeae2;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' fill='none' stroke='%23e2dacd' stroke-width='1.4' stroke-linecap='round'%3E%3Ccircle cx='18' cy='20' r='7'/%3E%3Cpath d='M70 14l6 6-6 6-6-6z'/%3E%3Cpath d='M98 60c4-6 12-6 12 2 0 6-12 12-12 12s-12-6-12-12c0-8 8-8 12-2z'/%3E%3Cpath d='M20 70h16M28 62v16'/%3E%3Cpath d='M58 92a8 8 0 1 0 16 0'/%3E%3Cpath d='M100 104l8-8M8 104l6 6 8-12'/%3E%3C/svg%3E"); }
+  .day { align-self: center; background: #fff; color: #54656f; font-size: 12px; padding: 4px 12px; border-radius: 8px; margin: 2px 0 8px; box-shadow: 0 1px .5px rgba(11,20,26,.13); }
+  .b { position: relative; max-width: 84%; padding: 6px 9px 8px; border-radius: 7.5px; font-size: 14.2px; line-height: 1.38; color: #111b21; box-shadow: 0 1px .5px rgba(11,20,26,.13); margin-top: 6px; }
+  .b p { margin: 0 }
+  .b.in { align-self: flex-start; background: #fff; }
+  .b.out { align-self: flex-end; background: #d9fdd3; }
+  .b.in.tail { border-top-left-radius: 0; } .b.out.tail { border-top-right-radius: 0; }
+  .b.in.tail::before, .b.out.tail::before { content: ""; position: absolute; top: 0; width: 8px; height: 13px; }
+  .b.in.tail::before { left: -8px; background: #fff; clip-path: polygon(100% 0, 0 0, 100% 100%); }
+  .b.out.tail::before { right: -8px; background: #d9fdd3; clip-path: polygon(0 0, 100% 0, 0 100%); }
+  .who { display: block; font-size: 12.8px; font-weight: 500; color: #c92d55; margin-bottom: 2px; }
+  .who.ada { color: #1f7aec } .who.tobi { color: #a5620a }
+  .t { float: right; display: inline-flex; align-items: center; gap: 3px; margin: 6px 0 -4px 10px; font-size: 11px; color: #667781; }
+  .ticks { width: 16px; height: 11px; color: #53bdeb; }
+  .dues-img { display: grid; gap: 1px; border-radius: 6px; padding: 14px 16px; margin: 2px -5px 6px; color: #fff; background: linear-gradient(135deg, #ff6f91, #b8264c); }
+  .dues-img .dl { font-size: 10px; letter-spacing: .14em; opacity: .85; }
+  .dues-img b { font: 700 18px "Encode Sans", sans-serif; } .dues-img .dp { font-size: 22px; margin-top: 8px; }
+  .dues-img .ds { font-size: 12px; opacity: .9; }
+  .dues-img .bar { height: 7px; border-radius: 99px; background: rgba(255,255,255,.3); margin-top: 8px; overflow: hidden; }
+  .dues-img .bar i { display: block; height: 100%; width: 68%; background: #fff; border-radius: 99px; }
+  .wa-input { display: flex; align-items: center; gap: 6px; padding: 6px 6px 14px; }
+  .wa-input .pill { flex: 1; display: flex; align-items: center; gap: 12px; background: #fff; border-radius: 24px; padding: 11px 14px; color: #8696a0; font-size: 15px; box-shadow: 0 1px .5px rgba(11,20,26,.13); }
+  .wa-input .pill span { flex: 1 } .ii { width: 22px; height: 22px; }
+  .mic { width: 48px; height: 48px; border-radius: 50%; background: #00a884; color: #fff; display: grid; place-items: center; flex: none; } .mi { width: 22px; height: 22px; }
+
+  section { padding: 88px 0; }
+  section.tinted { background: var(--tint); }
+  .head { max-width: 720px; margin-bottom: 40px; }
+  .head h2 { font-size: clamp(32px, 4vw, 46px); font-weight: 800; line-height: 1.08; margin-top: 10px; }
+  .head p { font-size: 19px; color: var(--muted); margin: 14px 0 0; }
+
+  .grid { display: grid; gap: 20px; }
+  .g3 { grid-template-columns: repeat(3, 1fr) } .g4 { grid-template-columns: repeat(4, 1fr) } .g5 { grid-template-columns: repeat(5, 1fr) }
+  .box { background: var(--card); border: 1px solid var(--line); border-radius: 24px; padding: 28px; box-shadow: 0 24px 48px -36px rgba(242,72,110,.45); }
+  .box h3 { font-size: 22px; font-weight: 800; margin: 14px 0 8px; }
+  .box p { margin: 0; color: var(--muted); font-size: 16px; }
+  .badge { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; color: var(--rose-deep); background: linear-gradient(180deg, #fff, var(--tint)); border: 1px solid var(--line); }
+  .big { font-family: "Encode Sans", sans-serif; font-weight: 800; font-size: 44px; line-height: 1; color: var(--rose); }
+  .step .n { width: 40px; height: 40px; border-radius: 12px; background: var(--rose); color: #fff; display: grid; place-items: center; font: 800 18px "Encode Sans", sans-serif; }
+  .step.last { background: linear-gradient(180deg, var(--rose-top), var(--rose)); color: #fff; border: 0; }
+  .step.last p { color: #ffe9ef } .step.last .n { background: #fff; color: var(--rose-deep); }
+
+  .flow { display: flex; align-items: stretch; gap: 12px; }
+  .flow .box { flex: 1; }
+  .arrow { align-self: center; color: var(--rose); }
+  .flow .box.hold { border: 2px solid var(--rose); }
+  .pots { display: grid; grid-template-columns: 1fr auto 1fr; gap: 20px; align-items: center; }
+  .pots .box.hold { border: 2px solid var(--rose); }
+  .pots ul { margin: 14px 0 0; padding-left: 20px; color: var(--muted); font-size: 16px; }
+  .pots li + li { margin-top: 4px; }
+  .move { display: grid; justify-items: center; gap: 8px; color: var(--rose); }
+  .move .ic { width: 34px; height: 34px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 16px; }
+  th, td { text-align: left; padding: 14px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  code { font: 600 15px ui-monospace, "Cascadia Code", Consolas, monospace; background: var(--tint); color: var(--rose-deep); padding: 2px 8px; border-radius: 8px; white-space: nowrap; }
+  .table { background: var(--card); border: 1px solid var(--line); border-radius: 24px; overflow: hidden; }
+  .table tr:last-child td { border-bottom: 0 }
+
+  .roqqu { display: grid; grid-template-columns: .9fr 1.1fr; gap: 48px; align-items: center; }
+  .cta { text-align: center; background: linear-gradient(135deg, #d93a62, #8c1a3a); color: #fff8f9; border-radius: 32px; padding: 56px 24px 64px; }
+  .cta .pig-anim { margin: 0 auto 8px; width: 120px; }
+  .cta h2 { font-size: clamp(32px, 4.4vw, 52px); font-weight: 800; line-height: 1.05; }
+  .cta p { font-size: 19px; color: #ffe3ea; margin: 14px auto 28px; max-width: 560px; }
+  .cta .btn-main { background: #fff; color: var(--rose-deep); box-shadow: none; }
+  .cta .btn-alt { background: transparent; color: #fff; border-color: rgba(255,255,255,.5); }
+  .cta .ctas { justify-content: center }
+  footer { padding: 36px 0 48px; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+  footer .brand { font-size: 16px; }
+
+  @media (max-width: 900px) {
+    .hero .wrap, .roqqu { grid-template-columns: 1fr; gap: 40px; }
+    .phone { justify-self: center; }
+    .g4, .g5 { grid-template-columns: 1fr 1fr } .g3 { grid-template-columns: 1fr }
+    .flow { flex-direction: column } .arrow { transform: rotate(90deg) }
+    .pots { grid-template-columns: 1fr; } .move .ic { transform: rotate(90deg); }
+    .links { display: none }
+  }
+  @media (max-width: 560px) {
+    .g4, .g5 { grid-template-columns: 1fr }
+    section { padding: 64px 0 } .hero .wrap { padding-top: 28px; padding-bottom: 56px; }
+    .pig-anim { width: 110px; }
+    .btn { width: 100%; justify-content: center; }
+    .screen { height: 620px; }
+    th, td { padding: 12px; } code { white-space: normal; }
+  }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; } }
+</style></head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<radialGradient id="kl-body" cx="34%" cy="28%" r="78%"><stop offset="0" stop-color="#ffe3ea"/><stop offset=".45" stop-color="#ff98b0"/><stop offset="1" stop-color="#cf4a70"/></radialGradient>
+<radialGradient id="kl-snout" cx="40%" cy="30%" r="80%"><stop offset="0" stop-color="#ffc2d0"/><stop offset="1" stop-color="#e2668a"/></radialGradient>
+<linearGradient id="kl-ear" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9fb5"/><stop offset="1" stop-color="#d9577a"/></linearGradient>
+<linearGradient id="kl-leg" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#f27d9a"/><stop offset="1" stop-color="#c94a6c"/></linearGradient>
+<radialGradient id="kl-coin" cx="35%" cy="30%" r="80%"><stop offset="0" stop-color="#fff1b8"/><stop offset=".5" stop-color="#f7b733"/><stop offset="1" stop-color="#c27c00"/></radialGradient></defs><symbol id="kolo-pig" viewBox="0 0 64 64">
+<ellipse cx="33" cy="58.5" rx="21" ry="2.6" fill="#7a1d3a" opacity=".18"/>
+<rect x="41" y="43" width="7" height="13" rx="3.2" fill="url(#kl-leg)"/>
+<rect x="18" y="43" width="7" height="13" rx="3.2" fill="url(#kl-leg)"/>
+<rect x="41" y="53" width="7" height="3" rx="1.5" fill="#a83558"/>
+<rect x="18" y="53" width="7" height="3" rx="1.5" fill="#a83558"/>
+<path d="M54 32c4.5-1.6 7 1.8 5 4.2-1.8 2.2-4.6.6-3-1.6" fill="none" stroke="#d9577a" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M18.5 24 18 12.5 26 19z" fill="#c94a6c"/>
+<g class="logo-coin"><circle cx="41.6" cy="13.4" r="6.6" fill="#b06e00"/><circle cx="41" cy="12.8" r="6.6" fill="url(#kl-coin)"/>
+<text x="41" y="15.6" text-anchor="middle" font-family="Encode Sans, Arial, sans-serif" font-weight="800" font-size="8" fill="#8a5300">₦</text></g>
+<ellipse cx="34" cy="35" rx="21.5" ry="16.5" fill="url(#kl-body)"/>
+<ellipse cx="35" cy="45.5" rx="17" ry="5.5" fill="#a83558" opacity=".16"/>
+<path d="M22 22.5 23.5 9.5l8.5 9.5z" fill="url(#kl-ear)"/>
+<path d="M23.6 20.2 24.4 13l4.8 5.4z" fill="#ffc7d3"/>
+<ellipse cx="13.6" cy="36" rx="5.4" ry="6.6" fill="url(#kl-snout)"/>
+<ellipse cx="11" cy="36" rx="3.3" ry="5" fill="#f07a96"/>
+<ellipse cx="10.2" cy="34.2" rx=".95" ry="1.4" fill="#9e2f50"/>
+<ellipse cx="10.2" cy="37.9" rx=".95" ry="1.4" fill="#9e2f50"/>
+<ellipse cx="22.5" cy="28.6" rx="2.1" ry="2.7" fill="#2a141c"/>
+<circle cx="23.2" cy="27.7" r=".8" fill="#fff"/>
+<ellipse cx="21.5" cy="36.2" rx="3.6" ry="2" fill="#ff6f91" opacity=".35"/>
+<rect x="35" y="19.4" width="12" height="2.8" rx="1.4" fill="#8f2a4a"/>
+<ellipse cx="31" cy="25.5" rx="11" ry="4.6" fill="#fff" opacity=".38" transform="rotate(-14 31 25.5)"/></symbol></svg>
+<nav><div class="wrap">
+  <a class="brand" href="#top"><svg class="logo" width="36" height="36" viewBox="0 0 64 64" role="img" aria-label="Kolo"><use href="#kolo-pig"/></svg>Kolo</a>
+  <div class="links"><a href="#how">How it works</a><a href="#safe">Safety</a><a href="#start">Get started</a><a href="#roqqu">Roqqu</a></div>
+  <a class="navbtn" href="https://wallet.84-12-109-77.sslip.io"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" /><path d="M14 13.12c0 2.38 0 6.38-1 8.88" /><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02" /><path d="M2 12a10 10 0 0 1 18-6" /><path d="M2 16h.01" /><path d="M21.8 16c.2-2 .131-5.354 0-6" /><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" /><path d="M8.65 22c.21-.66.45-1.32.57-2" /><path d="M9 6.8a6 6 0 0 1 9 5.2v2" /></svg>My wallet</a>
+</div></nav>
+
+<header class="hero" id="top"><div class="wrap">
+  <div>
+    <svg class="pig-anim" viewBox="0 -14 64 78" role="img" aria-label="A naira coin dropping into the Kolo piggy bank">
+<ellipse cx="33" cy="58.5" rx="21" ry="2.6" fill="#7a1d3a" opacity=".18"/>
+<rect x="41" y="43" width="7" height="13" rx="3.2" fill="url(#kl-leg)"/>
+<rect x="18" y="43" width="7" height="13" rx="3.2" fill="url(#kl-leg)"/>
+<rect x="41" y="53" width="7" height="3" rx="1.5" fill="#a83558"/>
+<rect x="18" y="53" width="7" height="3" rx="1.5" fill="#a83558"/>
+<path d="M54 32c4.5-1.6 7 1.8 5 4.2-1.8 2.2-4.6.6-3-1.6" fill="none" stroke="#d9577a" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M18.5 24 18 12.5 26 19z" fill="#c94a6c"/>
+<g class="logo-coin"><circle cx="41.6" cy="13.4" r="6.6" fill="#b06e00"/><circle cx="41" cy="12.8" r="6.6" fill="url(#kl-coin)"/>
+<text x="41" y="15.6" text-anchor="middle" font-family="Encode Sans, Arial, sans-serif" font-weight="800" font-size="8" fill="#8a5300">₦</text></g>
+<ellipse cx="34" cy="35" rx="21.5" ry="16.5" fill="url(#kl-body)"/>
+<ellipse cx="35" cy="45.5" rx="17" ry="5.5" fill="#a83558" opacity=".16"/>
+<path d="M22 22.5 23.5 9.5l8.5 9.5z" fill="url(#kl-ear)"/>
+<path d="M23.6 20.2 24.4 13l4.8 5.4z" fill="#ffc7d3"/>
+<ellipse cx="13.6" cy="36" rx="5.4" ry="6.6" fill="url(#kl-snout)"/>
+<ellipse cx="11" cy="36" rx="3.3" ry="5" fill="#f07a96"/>
+<ellipse cx="10.2" cy="34.2" rx=".95" ry="1.4" fill="#9e2f50"/>
+<ellipse cx="10.2" cy="37.9" rx=".95" ry="1.4" fill="#9e2f50"/>
+<ellipse cx="22.5" cy="28.6" rx="2.1" ry="2.7" fill="#2a141c"/>
+<circle cx="23.2" cy="27.7" r=".8" fill="#fff"/>
+<ellipse cx="21.5" cy="36.2" rx="3.6" ry="2" fill="#ff6f91" opacity=".35"/>
+<rect x="35" y="19.4" width="12" height="2.8" rx="1.4" fill="#8f2a4a"/>
+<ellipse cx="31" cy="25.5" rx="11" ry="4.6" fill="#fff" opacity=".38" transform="rotate(-14 31 25.5)"/></svg>
+    <span class="eyebrow">WhatsApp · Built on Roqqu</span>
+    <h1>Money in your group chat.</h1>
+    <p class="lead">Kolo is a WhatsApp bot that collects, tracks and spends group money, so the class rep never has to be the bank again.</p>
+    <div class="ctas">
+      <a class="btn btn-main" href="#start"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" x2="19" y1="8" y2="14" /><line x1="22" x2="16" y1="11" y2="11" /></svg>Add Kolo to your group</a>
+      <a class="btn btn-alt" href="#how">See how it works</a>
+    </div>
+    <div class="pills"><span class="pill-tag"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>No app to install</span><span class="pill-tag"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>Any language</span><span class="pill-tag"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>Works on USSD</span><span class="pill-tag"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>Group votes on spending</span></div>
+  </div>
+  
+<div class="phone" role="img" aria-label="A WhatsApp group chat where Kolo collects ₦2,000 project dues and ticks people as they pay">
+  <div class="screen">
+    <div class="sbar"><span>9:41</span><span class="sicons"><svg class="si" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 20h.01" /><path d="M7 20v-4" /><path d="M12 20v-8" /><path d="M17 20V8" /><path d="M22 4v16" /></svg><svg class="si" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h.01" /><path d="M2 8.82a15 15 0 0 1 20 0" /><path d="M5 12.859a10 10 0 0 1 14 0" /><path d="M8.5 16.429a5 5 0 0 1 7 0" /></svg><svg class="si" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="16" height="10" x="2" y="7" rx="2" ry="2" /><line x1="22" x2="22" y1="11" y2="13" /><line x1="6" x2="6" y1="11" y2="13" /><line x1="10" x2="10" y1="11" y2="13" /><line x1="14" x2="14" y1="11" y2="13" /></svg></span></div>
+    <div class="wa-head">
+      <svg class="hi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7" /><path d="M19 12H5" /></svg>
+      <span class="gav"><svg class="gi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg></span>
+      <div class="gname"><b>CSC 300L Class</b><small>Ada, Chidi, Kolo, Tobi, You</small></div>
+      <svg class="hi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg><svg class="hi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" /></svg><svg class="hi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" /></svg>
+    </div>
+    <div class="wa-body">
+      <div class="day">Today</div>
+      <div class="b out tail">Kolo, everybody drop 2k for the project <span class="t">10:02<svg class="ticks" viewBox="0 0 16 11" aria-label="Read"><path d="M11.07.65 4.6 7.12 1.93 4.45.88 5.5 4.6 9.22l7.52-7.52zM15.12.65 8.65 7.12l-.83-.83-1.05 1.05 1.88 1.88 7.52-7.52z" fill="currentColor"/></svg></span></div>
+      <div class="b in tail kolo">
+        <span class="who">Kolo</span>
+        <div class="dues-img">
+          <span class="dl">KOLO · DUES</span>
+          <b>Project dues</b>
+          <span class="ds">₦2,000 each</span>
+          <span class="bar"><i></i></span>
+          <b class="dp">41/60 paid</b>
+          <span class="ds">₦82,000 collected</span>
+        </div>
+        <p><b>Kolo</b><br>Project dues started. I've sent everyone their own pay link in DM. I'll tick you here the moment Roqqu confirms your payment.</p>
+        <span class="t">10:02</span>
+      </div>
+      <div class="b in tail"><span class="who ada">Ada</span>Paid ✅ <span class="t">10:05</span></div>
+      <div class="b in tail kolo"><span class="who">Kolo</span><p><b>Kolo</b><br>Ada has paid. 42 of 60 done, ₦84,000 in the group pot.</p><span class="t">10:05</span></div>
+      <div class="b in tail"><span class="who tobi">Tobi</span>Kolo remind the rest abeg 😅 <span class="t">10:07</span></div>
+    </div>
+    <div class="wa-input">
+      <div class="pill"><svg class="ii" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" x2="9.01" y1="9" y2="9" /><line x1="15" x2="15.01" y1="9" y2="9" /></svg><span>Message</span><svg class="ii" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg><svg class="ii" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" /><circle cx="12" cy="13" r="3" /></svg></div>
+      <span class="mic"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" x2="12" y1="19" y2="22" /></svg></span>
+    </div>
+  </div>
+</div>
+</div></header>
+
+<section id="problem"><div class="wrap">
+  <div class="head"><span class="eyebrow">The problem</span><h2>Every group has an unpaid, unaudited bank: the class rep.</h2></div>
+  <div class="grid g4">
+    <div class="box"><div class="big">60</div><h3>separate transfers</h3><p>Each one checked against a screenshot, by hand.</p></div>
+    <div class="box"><div class="big">Weeks</div><h3>of chasing people</h3><p>“I don pay” on trust, and reminders nobody reads.</p></div>
+    <div class="box"><div class="big">1</div><h3>personal account</h3><p>Everyone’s money mixed with one person’s own.</p></div>
+    <div class="box"><div class="big">?</div><h3>“Where the money go?”</h3><p>No record, no proof, and a fight at the end.</p></div>
+  </div>
+  <p class="muted" style="margin-top:24px">Same story in fellowships, associations, trips, ajo and esusu, and every shared bill.</p>
+</div></section>
+
+<section class="tinted" id="how"><div class="wrap">
+  <div class="head"><span class="eyebrow">How it works</span><h2>From one message to a paid-up group.</h2><p>Kolo sits in your WhatsApp group like any member. Talk to it normally; it does the counting.</p></div>
+  <div class="grid g5">
+    <div class="box step"><div class="n">1</div><h3>Ask</h3><p>“Kolo, everybody drop 2k for project.”</p></div>
+    <div class="box step"><div class="n">2</div><h3>Pay</h3><p>Everyone gets a private pay link, priced in naira.</p></div>
+    <div class="box step"><div class="n">3</div><h3>Tick</h3><p>Kolo ticks each person in the group when Roqqu confirms.</p></div>
+    <div class="box step"><div class="n">4</div><h3>Vote</h3><p>Spending the pot needs a group vote, and a group admin’s yes.</p></div>
+    <div class="box step last"><div class="n">5</div><h3>Receipt</h3><p>Yes wins, Roqqu pays out, everyone sees the receipt.</p></div>
+  </div>
+</div></section>
+
+<section id="features"><div class="wrap">
+  <div class="head"><span class="eyebrow">What Kolo does</span><h2>Everything a group does with money.</h2></div>
+  <div class="grid g3">
+    <div class="box"><span class="badge"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 15h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 17" /><path d="m7 21 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9" /><path d="m2 16 6 6" /><circle cx="16" cy="9" r="2.9" /><circle cx="6" cy="5" r="3" /></svg></span><h3>Collect dues</h3><p>Personal pay links, automatic ticks and a live progress card. Late payers still reach the pot.</p></div>
+    <div class="box"><span class="badge"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" /><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" /><path d="M12 17.5v-11" /></svg></span><h3>Split bills</h3><p>“Kolo split 9k between me, Ada and Tobi.” Everyone gets a link for their share.</p></div>
+    <div class="box"><span class="badge"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 12 2 2 4-4" /><path d="M5 7c0-1.1.9-2 2-2h10a2 2 0 0 1 2 2v12H5V7Z" /><path d="M22 19H2" /></svg></span><h3>Vote to spend</h3><p>Money leaves the group pot only when the majority says yes, including a group admin, with a receipt for all.</p></div>
+    <div class="box"><span class="badge"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /><path d="M4 2C2.8 3.7 2 5.7 2 8" /><path d="M22 8c0-2.3-.8-4.3-2-6" /></svg></span><h3>Remind and track</h3><p>See who has paid, and nudge the rest without being the bad guy.</p></div>
+    <div class="box"><span class="badge"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" /><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" /></svg></span><h3>Your own wallet and Kolo ID</h3><p>Top up, cash out, and send to anyone by their Kolo ID, like <code>/send @ada 2k</code>.</p></div>
+    <div class="box"><span class="badge"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="20" x="5" y="2" rx="2" ry="2" /><path d="M12 18h.01" /></svg></span><h3>A web menu</h3><p>Prefer tapping to typing? <code>/app</code> sends you a private menu link.</p></div>
+  </div>
+</div></section>
+
+<section class="tinted" id="safe"><div class="wrap">
+  <div class="head"><span class="eyebrow">Where the money goes</span><h2>Kolo never holds your money or your keys.</h2><p>Kolo is the software in between. Roqqu, a licensed company, holds the funds.</p></div>
+  <div class="flow">
+    <div class="box"><h3>Your phone</h3><p>Pay from any wallet or exchange.</p></div>
+    <span class="arrow"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg></span>
+    <div class="box"><h3>Roqqu checkout</h3><p>Priced in naira.</p></div>
+    <span class="arrow"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg></span>
+    <div class="box hold"><h3>Your group’s account</h3><p>Separate for every group. Never one shared pool.</p></div>
+    <span class="arrow"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg></span>
+    <div class="box"><h3>Out only by vote</h3><p>Or to your own wallet.</p></div>
+  </div>
+  <div class="grid g3" style="margin-top:20px">
+    <div class="box"><span class="badge"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" /><path d="M14 13.12c0 2.38 0 6.38-1 8.88" /><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02" /><path d="M2 12a10 10 0 0 1 18-6" /><path d="M2 16h.01" /><path d="M21.8 16c.2-2 .131-5.354 0-6" /><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" /><path d="M8.65 22c.21-.66.45-1.32.57-2" /><path d="M9 6.8a6 6 0 0 1 9 5.2v2" /></svg></span><h3>Your fingerprint is the key</h3><p>No password, no seed phrase. Your wallet opens with your fingerprint or face.</p></div>
+    <div class="box"><span class="badge"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /><path d="m9 12 2 2 4-4" /></svg></span><h3>A daily limit Kolo can’t break</h3><p>You set it, and the blockchain enforces it. Even Kolo can’t spend past it.</p></div>
+    <div class="box"><span class="badge"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8.5a6.5 6.5 0 1 1 13 0c0 6-6 6-6 10a3.5 3.5 0 1 1-7 0" /><path d="M15 8.5a2.5 2.5 0 0 0-5 0v1a2 2 0 1 1 0 4" /></svg></span><h3>Only listens when you call it</h3><p>Kolo answers messages meant for it and ignores the rest of your chat.</p></div>
+  </div>
+</div></section>
+
+<section id="pots"><div class="wrap">
+  <div class="head"><span class="eyebrow">Your Kolo balance and your wallet</span><h2>Two places for your money.</h2><p>Your Kolo balance is for paying in the group. Your wallet is yours alone. <code>/cashout</code> moves money from one to the other.</p></div>
+  <div class="pots">
+    <div class="box">
+      <span class="badge"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="12" x="2" y="6" rx="2" /><circle cx="12" cy="12" r="2" /><path d="M6 12h.01M18 12h.01" /></svg></span>
+      <h3>Kolo balance</h3>
+      <p>Money you’ve put into Kolo, held by Roqqu. Fill it with <code>/topup</code>, or when someone sends you money or pays back a split.</p>
+      <ul><li>Pays your dues, even on USSD</li><li>Sends to members or Kolo IDs: <code>/send @ada 1k</code></li><li>Moves when you ask in the chat</li></ul>
+    </div>
+    <div class="move"><span><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg></span><code>/cashout 5k</code></div>
+    <div class="box hold">
+      <span class="badge"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" /><path d="M14 13.12c0 2.38 0 6.38-1 8.88" /><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02" /><path d="M2 12a10 10 0 0 1 18-6" /><path d="M2 16h.01" /><path d="M21.8 16c.2-2 .131-5.354 0-6" /><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" /><path d="M8.65 22c.21-.66.45-1.32.57-2" /><path d="M9 6.8a6 6 0 0 1 9 5.2v2" /></svg></span>
+      <h3>Your wallet</h3>
+      <p>Your own account on the blockchain. Only your fingerprint or face controls it, and it stays yours even if you leave Kolo.</p>
+      <ul><li>Keep your money</li><li>Send it anywhere with your fingerprint</li><li>Kolo can only pay group things, up to your daily limit</li></ul>
+    </div>
+  </div>
+</div></section>
+
+<section id="everyone"><div class="wrap">
+  <div class="head"><span class="eyebrow">Built for Nigerian groups</span><h2>Nobody gets left out of the group money.</h2></div>
+  <div class="grid g3">
+    <div class="box"><span class="badge"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 8 6 6" /><path d="m4 14 6-6 2-3" /><path d="M2 5h12" /><path d="M7 2h1" /><path d="m22 22-5-10-5 10" /><path d="M14 18h6" /></svg></span><h3>Any language</h3><p>English, Pidgin, Igbo, Yoruba, Hausa and more. Kolo replies in yours.</p></div>
+    <div class="box"><span class="badge"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h.01" /><path d="M8.5 16.429a5 5 0 0 1 7 0" /><path d="M5 12.859a10 10 0 0 1 5.17-2.69" /><path d="M19 12.859a10 10 0 0 0-2.007-1.523" /><path d="M2 8.82a15 15 0 0 1 4.177-2.643" /><path d="M22 8.82a15 15 0 0 0-11.288-3.764" /><path d="m2 2 20 20" /></svg></span><h3>No data needed</h3><p>Dial USSD and pay with your PIN; the WhatsApp group sees it instantly. <a href="/ussd">Try the USSD demo</a>.</p></div>
+    <div class="box"><span class="badge"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" x2="19" y1="8" y2="14" /><line x1="22" x2="16" y1="11" y2="11" /></svg></span><h3>Nothing to install</h3><p>Add Kolo’s number to the group like any member. That’s the whole setup.</p></div>
+  </div>
+</div></section>
+
+<section class="tinted" id="start"><div class="wrap">
+  <div class="head"><span class="eyebrow">Get started</span><h2>Three steps, about a minute.</h2></div>
+  <div class="grid g3">
+    <div class="box step"><div class="n">1</div><h3>Add Kolo</h3><p>Save <b>+234 904 837 8261</b> and add it to your WhatsApp group.</p></div>
+    <div class="box step"><div class="n">2</div><h3>Say hi</h3><p>Type <code>/menu</code> to see everything Kolo can do, or just talk to it.</p></div>
+    <div class="box step"><div class="n">3</div><h3>Get your wallet</h3><p>Type <code>/join</code>. Your fingerprint makes your wallet, and your Roqqu username becomes your Kolo ID.</p></div>
+  </div>
+  <div class="table" style="margin-top:28px"><table>
+    <tr><th>Type this</th><th>What happens</th></tr>
+    <tr><td><code>/dues 2k Class dues</code></td><td>Everyone gets a private pay link, and a progress card appears. The money goes into the group pot.</td></tr>
+    <tr><td><code>/dues 2k Handouts to me</code></td><td>For the course rep (a group admin): the money goes straight to their own Kolo ID, so they can spend it without a vote.</td></tr>
+    <tr><td><code>/status</code> · <code>/remind</code></td><td>See who has paid, and nudge the rest.</td></tr>
+    <tr><td><code>/split 9k me @Ada @Tobi</code></td><td>Share a bill; everyone pays their part.</td></tr>
+    <tr><td><code>/spend 3k @Ada projector</code></td><td>The group votes; if yes wins, Kolo pays and posts a receipt.</td></tr>
+    <tr><td><code>/send @ada 1k</code> · <code>/id</code></td><td>Send to anyone by their Kolo ID, and see yours.</td></tr>
+    <tr><td><code>/send 2k</code> on a contact card</td><td>Pay any WhatsApp contact, even if they’re not on Kolo. They get a link to open a free wallet, and the money waits for them for 7 days.</td></tr>
+    <tr><td><code>/topup 5k</code> · <code>/cashout 2k</code></td><td>Your own balance, answered privately.</td></tr>
+    <tr><td><code>/app</code></td><td>A private web menu for everything above.</td></tr>
+  </table></div>
+  <p class="muted" style="margin-top:18px">Already have a Kolo wallet? <a href="https://wallet.84-12-109-77.sslip.io">Log in with your fingerprint</a>.</p>
+</div></section>
+
+<section id="roqqu"><div class="wrap roqqu">
+  <div class="head" style="margin:0"><span class="eyebrow">Built on Roqqu</span><h2>Every member of every group becomes a Roqqu user.</h2><p>No app to download. They pay a Roqqu link inside a chat they already use, and their Roqqu username is their Kolo ID.</p></div>
+  <div class="table"><table>
+    <tr><th>Roqqu</th><th>What Kolo does with it</th></tr>
+    <tr><td>Payment links</td><td>A pay link per member, priced in naira</td></tr>
+    <tr><td>Deposits</td><td>Ticks payers in the group automatically</td></tr>
+    <tr><td>Customer wallets</td><td>Each group’s own account</td></tr>
+    <tr><td>Send</td><td>Pays out approved votes and cash-outs</td></tr>
+    <tr><td>Rates</td><td>Live naira prices</td></tr>
+  </table></div>
+</div></section>
+
+<section style="padding-top:0"><div class="wrap">
+  <div class="cta">
+    <svg class="pig-anim" viewBox="0 -14 64 78" role="img" aria-label="A naira coin dropping into the Kolo piggy bank">
+<ellipse cx="33" cy="58.5" rx="21" ry="2.6" fill="#7a1d3a" opacity=".18"/>
+<rect x="41" y="43" width="7" height="13" rx="3.2" fill="url(#kl-leg)"/>
+<rect x="18" y="43" width="7" height="13" rx="3.2" fill="url(#kl-leg)"/>
+<rect x="41" y="53" width="7" height="3" rx="1.5" fill="#a83558"/>
+<rect x="18" y="53" width="7" height="3" rx="1.5" fill="#a83558"/>
+<path d="M54 32c4.5-1.6 7 1.8 5 4.2-1.8 2.2-4.6.6-3-1.6" fill="none" stroke="#d9577a" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M18.5 24 18 12.5 26 19z" fill="#c94a6c"/>
+<g class="logo-coin"><circle cx="41.6" cy="13.4" r="6.6" fill="#b06e00"/><circle cx="41" cy="12.8" r="6.6" fill="url(#kl-coin)"/>
+<text x="41" y="15.6" text-anchor="middle" font-family="Encode Sans, Arial, sans-serif" font-weight="800" font-size="8" fill="#8a5300">₦</text></g>
+<ellipse cx="34" cy="35" rx="21.5" ry="16.5" fill="url(#kl-body)"/>
+<ellipse cx="35" cy="45.5" rx="17" ry="5.5" fill="#a83558" opacity=".16"/>
+<path d="M22 22.5 23.5 9.5l8.5 9.5z" fill="url(#kl-ear)"/>
+<path d="M23.6 20.2 24.4 13l4.8 5.4z" fill="#ffc7d3"/>
+<ellipse cx="13.6" cy="36" rx="5.4" ry="6.6" fill="url(#kl-snout)"/>
+<ellipse cx="11" cy="36" rx="3.3" ry="5" fill="#f07a96"/>
+<ellipse cx="10.2" cy="34.2" rx=".95" ry="1.4" fill="#9e2f50"/>
+<ellipse cx="10.2" cy="37.9" rx=".95" ry="1.4" fill="#9e2f50"/>
+<ellipse cx="22.5" cy="28.6" rx="2.1" ry="2.7" fill="#2a141c"/>
+<circle cx="23.2" cy="27.7" r=".8" fill="#fff"/>
+<ellipse cx="21.5" cy="36.2" rx="3.6" ry="2" fill="#ff6f91" opacity=".35"/>
+<rect x="35" y="19.4" width="12" height="2.8" rx="1.4" fill="#8f2a4a"/>
+<ellipse cx="31" cy="25.5" rx="11" ry="4.6" fill="#fff" opacity=".38" transform="rotate(-14 31 25.5)"/></svg>
+    <h2>Stop being the group’s bank.</h2>
+    <p>Add Kolo to your WhatsApp group: <b>+234 904 837 8261</b></p>
+    <div class="ctas"><a class="btn btn-main" href="#start">Get started</a><a class="btn btn-alt" href="/ussd">Try the USSD demo</a></div>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  <span class="brand"><svg class="logo" width="26" height="26" viewBox="0 0 64 64" role="img" aria-label="Kolo"><use href="#kolo-pig"/></svg>Kolo · money in your group chat</span>
+  <span>Kenechukwu Okoye · Ikenna Excel Ikueze · Clinton · Anambra Web3 Conference 3.0</span>
+</div></footer>
+</body></html>

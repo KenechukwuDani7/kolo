@@ -14,7 +14,7 @@ Collecting dues today means dozens of bank transfers, screenshots, a list in som
 - `/join` sets up each member's own **passkey wallet** (fingerprint or face, no seed phrase) with a daily spending limit. Even Kolo can't move more than you allow, and `/cashout` sends your money there through Roqqu.
 - Every member gets a **Kolo ID**: their Roqqu username, like `@koda`. Anyone on Kolo can pay them with `/send @koda 2k`, even from another group, with no long wallet address.
 
-Built for the Anambra Web3 Conference 3.0 hackathon (Roqqu track), November 2026. Website: https://kolo.84-12-109-77.sslip.io
+Built for the Anambra Web3 Conference 3.0 hackathon (Roqqu track), November 2026. Website: https://kolo-ng.vercel.app
 
 ## Your Kolo balance and your wallet
 
@@ -62,9 +62,9 @@ Public demo links (free, no account): with the bot on :3117 and the wallet on :3
 
 Kolo runs 24/7 on an Oracle Cloud Always Free server (Ubuntu 24.04, Arm), so it works without anyone's laptop:
 
-- Website: https://kolo.84-12-109-77.sslip.io
+- Website: https://kolo-ng.vercel.app
 - Wallet sign-up and log-in: https://wallet.84-12-109-77.sslip.io (`/join` links point here)
-- USSD phone: https://kolo.84-12-109-77.sslip.io/ussd
+- USSD phone: https://kolo-ng.vercel.app/ussd (passed through to the bot)
 
 Three systemd services (`kolo-fork`, `kolo-wallet`, `kolo-bot`) restart on their own, and Caddy serves HTTPS with free Let's Encrypt certificates. To set up a new server: install Node 22 and Caddy, allow ports 80 and 443 (cloud firewall and the server's iptables), copy the code, then run `IP_DASHED=<ip-with-dashes> bash scripts/server-setup.sh`. The bot's `.env`, WhatsApp login (`bot/auth`) and state (`bot/data`) are copied separately and never committed. The WhatsApp login page is only served to localhost; use an SSH tunnel to reach it.
 
