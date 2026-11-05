@@ -80,10 +80,25 @@ expect(screen.includes('locked'), 'three wrong PINs lock paying', screen)
 screen = await ussd('2348000000001', '1*1*5940', asExcel)
 expect(screen.includes('Too many'), 'even the right PIN waits out the lock', screen)
 
+// Split for someone else: "split Clinton's 6k diapers bill among all of us" (as the AI reads it).
+;(kolo as any).balances.set(ike.id, 5000) // Koda topped up earlier
+const before = { ike: kolo.balanceOf(ike.id), clinton: kolo.balanceOf(clinton.id) }
+out = await (kolo as any).split(say(ike, ''), 6000, [excel, clinton], true, clinton)
+const linked = out.filter((a) => a.type === 'dm').map((a) => (a as { userId: string }).userId).sort()
+expect(linked.join() === [excel.id, ike.id].sort().join() && words(out).includes('owes Clinton ₦2,000'), 'Koda and Excel each owe Clinton ₦2,000; Clinton gets no link', words(out))
+
+// Paying a link from the Kolo balance (the checkout's "Pay from my Kolo balance").
+const ikeLinkRef = [...(kolo as any).references].find(([, r]: any) => r.kind === 'split' && r.memberId === ike.id && r.payeeId === clinton.id)[0]
+expect(kolo.balanceOfLink(ikeLinkRef) === before.ike, 'checkout sees Koda can pay from balance')
+const paidFromBalance = kolo.payLinkFromBalance(ikeLinkRef)
+expect(paidFromBalance.ok && kolo.balanceOf(ike.id) === before.ike - 2000 && kolo.balanceOf(clinton.id) === before.clinton + 2000, "Koda's balance pays Clinton ₦2,000", JSON.stringify(paidFromBalance))
+const again = kolo.payLinkFromBalance(ikeLinkRef)
+expect(!again.ok && again.reason.includes('already'), "the same link can't be paid twice", JSON.stringify(again))
+
 // State survives a restart (snapshot → restore).
-const again = new Kolo(undefined, payments)
-again.restore(JSON.parse(JSON.stringify(kolo.snapshot())))
-expect(again.checkPin(ike.id, '4821') && again.balanceOf(clinton.id) === 1000, 'PINs and balances survive a restart')
+const restored = new Kolo(undefined, payments)
+restored.restore(JSON.parse(JSON.stringify(kolo.snapshot())))
+expect(restored.checkPin(ike.id, '4821') && restored.balanceOf(clinton.id) === 3000, 'PINs and balances survive a restart')
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll feature checks passed')
 process.exit(failures ? 1 : 0)

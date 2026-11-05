@@ -286,7 +286,7 @@ createServer(async (req, res) => {
   // Kolo's test checkout (ROQQU_MODE=simulate): the page, and its Completed / Underpaid / Failed buttons.
   const pay = req.url?.match(/^\/pay\/([A-Z0-9]+)$/)
   if (pay && req.method === 'GET') {
-    const page = checkoutPage(pay[1])
+    const page = checkoutPage(pay[1], kolo.balanceOfLink(pay[1]))
     res.writeHead(page ? 200 : 404, { 'content-type': 'text/html; charset=utf-8' }).end(page ?? 'This payment link does not exist.')
     return
   }
@@ -295,12 +295,21 @@ createServer(async (req, res) => {
     for await (const chunk of req) body += chunk
     const link = simLinks.get(pay[1])
     const result = (() => { try { return JSON.parse(body).result } catch { return '' } })()
-    if (!link || link.state === 'paid' || !['completed', 'underpaid', 'failed'].includes(result)) {
-      res.writeHead(400).end()
+    if (!link || link.state === 'paid' || !['completed', 'underpaid', 'failed', 'balance'].includes(result)) {
+      res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: link?.state === 'paid' ? 'This one is already paid.' : 'Unknown payment link.' }))
       return
     }
     const dm = (text: string) => performNow?.([{ type: 'dm', userId: link.memberId, text: `🐷 *Kolo*\n${text}` }])
-    if (result === 'completed') {
+    if (result === 'balance') {
+      const paid = kolo.payLinkFromBalance(pay[1])
+      if (!paid.ok) {
+        res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: paid.reason }))
+        return
+      }
+      link.state = 'paid'
+      console.log(`test checkout paid from Kolo balance: ${pay[1]}`)
+      await performNow?.(paid.actions)
+    } else if (result === 'completed') {
       link.state = 'paid'
       console.log(`test checkout paid: ${pay[1]}`)
       await performNow?.(kolo.confirmPayment(pay[1], 'Roqqu (test checkout)'))

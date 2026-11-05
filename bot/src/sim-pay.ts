@@ -35,7 +35,8 @@ export const simulatedPayments: Payments = {
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const naira = (n: number) => `₦${n.toLocaleString('en-NG')}`
 
-export function checkoutPage(reference: string): string | undefined {
+// balance: the payer's Kolo balance, when this link can be paid from it (not a top-up).
+export function checkoutPage(reference: string, balance?: number): string | undefined {
   const l = simLinks.get(reference)
   if (!l) return undefined
   const done =
@@ -68,7 +69,8 @@ export function checkoutPage(reference: string): string | undefined {
     <div class="amount">${naira(l.naira)}</div>
     <div class="muted">Pays in USDT or BTC through Roqqu in the live version. Roqqu's sandbox is unavailable, so this page plays its part.</div>
     <div id="buttons"${l.state === 'paid' ? ' hidden' : ''}>
-      <button class="ok" data-r="completed">Completed</button>
+      ${balance !== undefined && balance >= l.naira ? `<button class="ok" data-r="balance">Pay from my Kolo balance (${naira(balance)})</button><div class="muted" style="margin-top:14px">Or test a Roqqu crypto payment:</div>` : ''}
+      <button class="${balance !== undefined && balance >= l.naira ? 'half' : 'ok'}" data-r="completed">Completed</button>
       <button class="half" data-r="underpaid">Underpaid (send half)</button>
       <button class="no" data-r="failed">Failed</button>
     </div>
@@ -79,7 +81,9 @@ export function checkoutPage(reference: string): string | undefined {
   document.querySelectorAll('[data-r]').forEach((b) => b.onclick = async () => {
     document.querySelectorAll('[data-r]').forEach((x) => x.disabled = true)
     const res = await fetch(location.pathname, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: b.dataset.r }) })
-    location.reload()
+    if (res.ok) return location.reload()
+    document.getElementById('done').textContent = (await res.json().catch(() => ({}))).error || 'That did not work. Try again.'
+    document.querySelectorAll('[data-r]').forEach((x) => x.disabled = false)
   })
 </script>
 </body></html>`

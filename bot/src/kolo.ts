@@ -478,7 +478,7 @@ export class Kolo {
         return this.markPaid(msg)
       case 'split':
         if (unknown.length) return [this.askWho(msg, unknown)]
-        return this.split(msg, intent.amount ?? undefined, people, intent.includeSender)
+        return this.split(msg, intent.amount ?? undefined, people, intent.includeSender, intent.payee ? this.resolve(msg, [intent.payee])[0] ?? msg.members.find((m) => m.id === msg.sender.id) : undefined)
       case 'pay':
         return this.pay(msg, intent.amount ?? undefined, people, unknown)
       case 'poll':
@@ -706,26 +706,28 @@ export class Kolo {
     return { type: 'image', chatId, png, caption: `${caption}\n${c.paid.size}/${c.members.length} paid · ${naira(c.paid.size * c.amount)} collected` }
   }
 
-  // Each person who owes gets their own pay link; what they pay lands in the bill payer's Kolo balance.
-  private async split(msg: Incoming, amount: number | undefined, others: Member[], includeSender: boolean): Promise<Action[]> {
+  // Each person who owes gets their own pay link; what they pay lands in the payee's Kolo
+  // balance. The payee is whoever paid the bill: the sender, unless they name someone else
+  // ("split Clinton's 6k diapers bill among us" → everyone else pays Clinton, the sender too).
+  private async split(msg: Incoming, amount: number | undefined, others: Member[], includeSender: boolean, payee: Member = msg.sender): Promise<Action[]> {
     if (!amount) return [this.text(msg, `How much is the whole bill?\nSay it like: ${FEATURES.split.say}`)]
-    const people = [...(includeSender ? [msg.sender] : []), ...others.filter((p) => p.id !== msg.sender.id)]
-    if (people.length < 2 && includeSender) return [this.text(msg, `Who shared it? Name them or tag them with @.\nSay it like: ${FEATURES.split.say}`)]
-    if (!people.length) return [this.text(msg, `Who shared it? Name them or tag them with @.\nSay it like: ${FEATURES.split.say}`)]
+    const people = [...new Map([...(includeSender ? [msg.sender] : []), ...others].map((p) => [p.id, p])).values()]
+    const owing = people.filter((p) => p.id !== payee.id)
+    if (!owing.length) return [this.text(msg, `Who shared it? Name them or tag them with @.\nSay it like: ${FEATURES.split.say}`)]
     const share = Math.ceil(amount / people.length)
-    const owing = people.filter((p) => p.id !== msg.sender.id)
-    const lines = owing.map((p) => `• ${tag(p)} owes ${naira(share)}`).join('\n')
+    const lines = owing.map((p) => `• ${tag(p)} owes ${payee.name} ${naira(share)}`).join('\n')
+    const forWhom = payee.id === msg.sender.id ? '' : ` for ${payee.name}`
     const dms = await Promise.all(
       owing.map(async (p): Promise<Action> => {
-        const ask = `${msg.sender.name} split ${naira(amount)} with you. Your share: ${naira(share)}.`
-        if (!this.payments) return { type: 'dm', userId: p.id, text: `${ask} Pay ${msg.sender.name} back directly.` }
+        const ask = `${msg.sender.name} split ${naira(amount)}${forWhom} with you. Your share: ${naira(share)}.`
+        if (!this.payments) return { type: 'dm', userId: p.id, text: `${ask} Pay ${payee.name} directly.` }
         try {
-          const { reference, url } = await this.payments.link({ chatId: msg.chatId, member: p, amount: share, title: `Split with ${msg.sender.name}` })
-          this.references.set(reference, { chatId: msg.chatId, memberId: p.id, kind: 'split', amount: share, name: p.name, payeeId: msg.sender.id, payeeName: msg.sender.name })
-          return { type: 'dm', userId: p.id, text: `${ask}\nPay here: ${url}\nIt goes straight to ${msg.sender.name}'s Kolo balance, and I'll tell the group once it lands.` }
+          const { reference, url } = await this.payments.link({ chatId: msg.chatId, member: p, amount: share, title: `Split: pay ${payee.name}` })
+          this.references.set(reference, { chatId: msg.chatId, memberId: p.id, kind: 'split', amount: share, name: p.name, payeeId: payee.id, payeeName: payee.name })
+          return { type: 'dm', userId: p.id, text: `${ask}\nPay here: ${url}\nIt goes straight to ${payee.name}'s Kolo balance, and I'll tell the group once it lands.` }
         } catch (error) {
           console.error('split link failed:', error)
-          return { type: 'dm', userId: p.id, text: `${ask} I couldn't make a pay link just now, so pay ${msg.sender.name} back directly.` }
+          return { type: 'dm', userId: p.id, text: `${ask} I couldn't make a pay link just now, so pay ${payee.name} directly.` }
         }
       }),
     )
@@ -733,11 +735,30 @@ export class Kolo {
       {
         type: 'text',
         chatId: msg.chatId,
-        text: `${naira(amount)} split ${people.length} way${people.length === 1 ? '' : 's'} is ${naira(share)} each.\n${lines}\nI've sent each of you a pay link in DM. It goes straight to ${msg.sender.name}.`,
+        text: `${naira(amount)}${forWhom} split ${people.length} way${people.length === 1 ? '' : 's'} is ${naira(share)} each.\n${lines}\nI've sent each of you your own pay link in DM. It goes straight to ${payee.name}.`,
         mentions: owing.map((p) => p.id),
       },
       ...dms,
     ]
+  }
+
+  // A pay link paid from the payer's Kolo balance instead of crypto (the checkout page's
+  // "Pay from my Kolo balance"). Top-up links can't be: they fill that balance.
+  payLinkFromBalance(reference: string): { ok: true; actions: Action[] } | { ok: false; reason: string } {
+    const ref = this.references.get(reference)
+    if (!ref) return { ok: false, reason: 'This link is already paid or no longer open.' }
+    if (ref.kind === 'topup' || !ref.amount) return { ok: false, reason: "This link can't be paid from a Kolo balance." }
+    const balance = this.balanceOf(ref.memberId)
+    if (balance < ref.amount) return { ok: false, reason: `Your Kolo balance is ${naira(balance)}, not enough for ${naira(ref.amount)}.` }
+    const actions = this.confirmPayment(reference, 'their Kolo balance')
+    if (!actions.length) return { ok: false, reason: 'This one is already paid.' }
+    this.balances.set(ref.memberId, this.balanceOf(ref.memberId) - ref.amount)
+    return { ok: true, actions }
+  }
+
+  balanceOfLink = (reference: string) => {
+    const ref = this.references.get(reference)
+    return ref && ref.kind !== 'topup' ? this.balanceOf(ref.memberId) : undefined
   }
 
   // "Kolo send Excel 2k": move money from the sender's Kolo balance to another member's, instantly.
