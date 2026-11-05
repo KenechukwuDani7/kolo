@@ -21,7 +21,7 @@ import makeWASocket, {
 } from 'baileys'
 import pino from 'pino'
 import qrcode from 'qrcode-terminal'
-import { Kolo, isAddressed, type Action, type Incoming, type Member, type Payments, type WalletInfo } from './kolo.js'
+import { Kolo, isAddressed, type Action, type Contact, type Incoming, type Member, type Payments, type WalletInfo } from './kolo.js'
 import { createPaymentLink, decryptWebhook, deposits, generateWallet, nairaPerDollar, roqquEnabled, send, setOutage } from './roqqu.js'
 import { APP_PAGE } from './app-page.js'
 import { landingPage } from './landing-page.js'
@@ -205,6 +205,15 @@ setInterval(async () => {
     console.warn('deposit watch:', (error as Error).message)
   }
 }, Number(process.env.ROQQU_POLL_MS ?? 15_000))
+
+// Payments to contacts nobody claimed in 7 days go back to the sender (checked hourly).
+setInterval(async () => {
+  if (!performNow) return
+  const refunds = kolo.expireClaims()
+  if (!refunds.length) return
+  await performNow(refunds).catch((error) => console.warn('claim refunds:', (error as Error).message))
+  saveState()
+}, 60 * 60_000)
 
 // Requests kept while Roqqu wasn't answering (pay links, top-ups, cash-outs, pot payments)
 // go out as soon as it answers again. One retry run at a time: a Roqqu timeout is 45s.
@@ -611,7 +620,19 @@ async function start() {
         if (byPhone && ids.includes(byPhone)) return { id: byPhone, groupId }
       }
     }
-    return undefined
+    // Someone not in a Kolo group who was paid through Kolo and set up a wallet.
+    return jids.map((j) => kolo.privateMember(j)).find(Boolean)
+  }
+
+  // A shared WhatsApp contact card: the name and phone (234… digits) from its vCard.
+  function contactOf(m: proto.IMessage | null | undefined): Contact | undefined {
+    const card = m?.contactMessage ?? m?.contactsArrayMessage?.contacts?.[0]
+    const vcard = card?.vcard ?? ''
+    const raw = vcard.match(/waid=(\d{7,15})/)?.[1] ?? vcard.match(/TEL[^:\n]*:([+\d\s()-]{7,})/)?.[1]
+    if (!raw) return undefined
+    const phone = phoneDigits(raw)
+    const memberId = memberIdByPhone.get(phone)
+    return { name: card?.displayName || `+${phone}`, phone, ...(memberId && { memberId, name: nameOf(memberId) !== memberId.split('@')[0] ? nameOf(memberId) : card?.displayName || `+${phone}` }) }
   }
 
   // A swipe-reply to one of Kolo's messages, even without the word "kolo".
@@ -650,6 +671,13 @@ async function start() {
           await perform(await onVote(msg, content.pollUpdateMessage))
           continue
         }
+        // A contact card sent to Kolo privately: remember it, so "/send 2k" next pays that person.
+        const card = contactOf(content)
+        if (card && privateFrom) {
+          console.log(`dm ${nameOf(privateFrom.id)}: shared a contact`)
+          await perform(kolo.rememberContact({ id: privateFrom.id, name: nameOf(privateFrom.id) }, msg.key.remoteJid!, card), msg)
+          continue
+        }
         const text = content?.conversation ?? content?.extendedTextMessage?.text
         // Never answer one of Kolo's own messages (after a restart their ids are forgotten).
         if (!text || text.startsWith('🐷 *Kolo*')) continue
@@ -670,6 +698,8 @@ async function start() {
           mentions: mentioned.filter((j) => !isMe(j)).map((id) => ({ id, name: nameOf(id) })),
           replyTo: replyToKolo(content),
           groupId: privateFrom?.groupId,
+          // "/send 2k" as a reply to a contact card pays that person.
+          contact: contactOf(content?.extendedTextMessage?.contextInfo?.quotedMessage),
         }
         // Group chat that isn't for Kolo is dropped here: not logged, not read, not sent to the AI.
         if (!isAddressed(incoming)) continue

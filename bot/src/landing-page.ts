@@ -318,6 +318,7 @@ ${LOGO_SPRITE}
     <tr><td><code>/split 9k me @Ada @Tobi</code></td><td>Share a bill; everyone pays their part.</td></tr>
     <tr><td><code>/spend 3k @Ada projector</code></td><td>The group votes; if yes wins, Kolo pays and posts a receipt.</td></tr>
     <tr><td><code>/send @ada 1k</code> · <code>/id</code></td><td>Send to anyone by their Kolo ID, and see yours.</td></tr>
+    <tr><td><code>/send 2k</code> on a contact card</td><td>Pay any WhatsApp contact, even if they’re not on Kolo. They get a link to open a free wallet, and the money waits for them for 7 days.</td></tr>
     <tr><td><code>/topup 5k</code> · <code>/cashout 2k</code></td><td>Your own balance, answered privately.</td></tr>
     <tr><td><code>/app</code></td><td>A private web menu for everything above.</td></tr>
   </table></div>

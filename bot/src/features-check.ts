@@ -174,6 +174,25 @@ const lateLink = [...(repGroup as any).references].find(([, r]: any) => r.title 
 repGroup.confirmPayment(lateLink)
 expect(repGroup.balanceOf(ike.id) === kodaBeforeRep + 2000 && repGroup.potOf(group) === potBeforeRep, 'a late payment after /close still goes to the rep')
 
+// Paying a WhatsApp contact who isn't on Kolo: the money waits for them, then lands when they join.
+const contacts = new Kolo(undefined, payments)
+contacts.restore(JSON.parse(JSON.stringify(kolo.snapshot())))
+;(contacts as any).balances.set(ike.id, 5000)
+out = await contacts.handle({ ...say(ike, '/send 2k'), contact: { name: 'Ada', phone: '2348031234567' } })
+const adaJid = '2348031234567@s.whatsapp.net'
+const adaLink = words(out).match(/\?t=([a-f0-9]{32})/)?.[1]
+expect(contacts.balanceOf(ike.id) === 3000 && out.some((a) => a.type === 'dm' && a.userId === adaJid) && !!adaLink, 'replying /send 2k to a contact card DMs Ada a wallet link and holds ₦2,000', words(out))
+out = await contacts.handle(say(ike, '/send 08031234567 500'))
+expect(contacts.balanceOf(ike.id) === 2500 && words(out).includes('waiting for'), 'a typed phone number works too, and reuses her link', words(out))
+out = contacts.walletReady(adaLink!, '0x' + '4'.repeat(40), '₦10,000')
+expect(contacts.balanceOf(adaJid) === 2500 && words(out).includes('received ₦2,500 from Koda'), 'when Ada sets up her wallet, the ₦2,500 lands in her Kolo balance', words(out))
+expect(contacts.privateMember(adaJid)?.groupId === group, 'Ada can now talk to Kolo privately')
+await contacts.handle({ ...say(ike, '/send 1k'), contact: { name: 'Bayo', phone: '2348099999999' } })
+out = contacts.expireClaims(Date.now() + 8 * 86_400_000)
+expect(contacts.balanceOf(ike.id) === 2500 && words(out).includes("wasn't claimed"), 'an unclaimed payment goes back after 7 days', words(out))
+out = await contacts.handle({ ...say(ike, '/send 1k'), contact: { name: 'Excel', phone: '2348000000001', memberId: excel.id } })
+expect(words(out).includes('Sent.') && !words(out).includes('waiting for'), "a contact who's already a member is paid straight away", words(out))
+
 // A wallet made before the wallet service kept records: /join sets up a new one, keeping balance and ID.
 const oldWallets = new Kolo(undefined, payments, {
   usage: async () => { throw new Error('no Kolo wallet with that address') },

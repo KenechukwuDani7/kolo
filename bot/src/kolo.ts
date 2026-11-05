@@ -26,7 +26,11 @@ export type Incoming = {
   groupId?: string
   // The WhatsApp group's admins (member ids). A pot spend also needs one of them to vote yes.
   admins?: string[]
+  // A WhatsApp contact card the message replies to (phone in international digits, 234…).
+  // memberId: set when that phone already belongs to someone in a Kolo group.
+  contact?: Contact
 }
+export type Contact = { name: string; phone: string; memberId?: string }
 
 export type Action =
   | { type: 'text'; chatId: string; text: string; mentions?: string[]; reply?: boolean }
@@ -139,6 +143,11 @@ export class Kolo {
   private owners = new Map<string, { name: string; chatId: string }>()
   // Kolo IDs: member id → a short handle ("koda", shown as @koda) used instead of a 0x address.
   private koloIds = new Map<string, string>()
+  // Money sent to someone not on Kolo yet, by their WhatsApp id (234…@s.whatsapp.net). It is
+  // already off the sender's balance; it lands when they set up a wallet, or goes back after 7 days.
+  private claims = new Map<string, { amount: number; from: Member; chatId: string; at: number }[]>()
+  // A contact card someone sent Kolo privately, so their next "/send 2k" pays that person.
+  private sharedContacts = new Map<string, { contact: Contact; at: number }>()
   // /app links: private token → who may use the Kolo web menu, for which group, until when.
   private appTokens = new Map<string, { chatId: string; member: Member; expires: number }>()
   // Members who asked to delete their account: member id → when the request expires.
@@ -159,6 +168,7 @@ export class Kolo {
       wallets: [...this.wallets],
       owners: [...this.owners],
       koloIds: [...this.koloIds],
+      claims: [...this.claims],
       groupAccounts: [...this.groupAccounts],
       waiting: this.waiting,
       // Open votes, so a spend vote still counts after a restart.
@@ -177,6 +187,7 @@ export class Kolo {
     this.wallets = new Map(s.wallets ?? [])
     this.owners = new Map(s.owners ?? [])
     this.koloIds = new Map(s.koloIds ?? [])
+    this.claims = new Map(s.claims ?? [])
     this.groupAccounts = new Map(s.groupAccounts ?? [])
     this.waiting = s.waiting ?? []
     this.polls = new Map(s.polls ?? [])
@@ -290,13 +301,77 @@ export class Kolo {
     const id = kept && !roqquUsername?.trim() ? kept : this.claimKoloId(who.memberId, roqquUsername, who.name)
     const asked = cleanKoloId(roqquUsername ?? '')
     const note = asked && asked !== id ? `\n(@${asked} was already taken, so ${who.name} is @${id}. They can change it with /id [new name].)` : ''
+    // Money people sent them before they had a wallet lands now.
+    const waiting = this.claims.get(who.memberId) ?? []
+    this.claims.delete(who.memberId)
+    const received = waiting.reduce((sum, c) => sum + c.amount, 0)
+    if (received) this.balances.set(who.memberId, this.balanceOf(who.memberId) + received)
+    const gotLine = received ? `\nThey just received ${naira(received)} from ${[...new Set(waiting.map((c) => c.from.name))].join(' and ')}, now in their Kolo balance.` : ''
     return [
       {
         type: 'text',
         chatId: who.chatId,
-        text: `${who.name} just set up their own Kolo wallet. Their Kolo ID is *@${id}*: anyone can send them money with /send @${id} [amount].\nOnly their fingerprint or face can control the wallet, and I can't spend more than ${dailyLimit} a day from it. That limit is enforced on the blockchain, not by me.${note}`,
+        text: `${who.name} just set up their own Kolo wallet. Their Kolo ID is *@${id}*: anyone can send them money with /send @${id} [amount].\nOnly their fingerprint or face can control the wallet, and I can't spend more than ${dailyLimit} a day from it. That limit is enforced on the blockchain, not by me.${gotLine}${note}`,
       },
+      ...waiting.map((c): Action => ({ type: 'dm', userId: c.from.id, text: `${who.name} set up their Kolo wallet and received the ${naira(c.amount)} you sent.` })),
     ].map(sign)
+  }
+
+  // ── Paying a WhatsApp contact who may not be on Kolo yet ──
+
+  // "Kolo, pay Ada" by sharing her contact card privately: remember it for the next /send.
+  rememberContact(sender: Member, chatId: string, contact: Contact): Action[] {
+    this.sharedContacts.set(sender.id, { contact, at: Date.now() })
+    return [{ type: 'text' as const, chatId, text: `Got ${contact.name} (+${contact.phone}). How much should I send them from your Kolo balance? Reply like: /send 2k` }].map(sign)
+  }
+
+  // Someone known to Kolo only by their phone (they got money and set up a wallet), so they
+  // can talk to Kolo privately: their id and the group they were paid from.
+  privateMember(jid: string) {
+    const owner = this.owners.get(jid)
+    return owner ? { id: jid, groupId: owner.chatId } : undefined
+  }
+
+  // Pay a contact: an existing member is paid straight away; anyone else gets a link to set up
+  // a wallet, and the money waits for them (off the sender's balance, back after 7 days).
+  private payContact(msg: Incoming, amount: number | undefined, contact: Contact): Action[] {
+    const jid = `${contact.phone}@s.whatsapp.net`
+    const knownId = contact.memberId ?? (this.owners.has(jid) ? jid : undefined)
+    if (knownId) return this.pay(msg, amount, [{ id: knownId, name: contact.name }], [])
+    if (!amount) return [this.text(msg, `How much should I send ${contact.name}? Say it like: /send 2k`)]
+    const balance = this.balanceOf(msg.sender.id)
+    if (amount > balance) return [this.text(msg, `${msg.sender.name}, your Kolo balance is ${naira(balance)}, not enough to send ${naira(amount)}. Add money with ${FEATURES.topup.say}`)]
+    this.balances.set(msg.sender.id, balance - amount)
+    const chatId = msg.groupId ?? msg.chatId
+    this.claims.set(jid, [...(this.claims.get(jid) ?? []), { amount, from: msg.sender, chatId, at: Date.now() }])
+    this.sharedContacts.delete(msg.sender.id)
+    // Their link to set up a wallet: one per person, reused if they're sent money again.
+    const token = [...this.joinTokens].find(([, w]) => w.memberId === jid)?.[0] ?? crypto.randomUUID().replace(/-/g, '')
+    this.joinTokens.set(token, { chatId, memberId: jid, name: contact.name })
+    const total = this.claims.get(jid)!.reduce((sum, c) => sum + c.amount, 0)
+    return [
+      this.text(msg, `Sent. ${naira(amount)} is waiting for ${contact.name}. They're not on Kolo yet, so I've messaged them a link to open a free wallet and receive it. If they don't within 7 days, it comes back to you.\nYour balance: ${naira(balance - amount)}`),
+      {
+        type: 'dm',
+        userId: jid,
+        text: `Hi ${contact.name}! ${msg.sender.name} sent you ${naira(total === amount ? amount : total)} through Kolo, the money bot for WhatsApp groups.\nTo receive it, open your free Kolo wallet with your fingerprint or face (about 20 seconds): ${joinUrl()}/?t=${token}\nNo password, no app to install.`,
+      },
+    ]
+  }
+
+  // Money nobody claimed within 7 days goes back to whoever sent it.
+  expireClaims(now = Date.now()): Action[] {
+    const out: Action[] = []
+    for (const [jid, list] of this.claims) {
+      const keep = list.filter((c) => now - c.at < CLAIM_DAYS * 86_400_000)
+      for (const c of list.filter((x) => !keep.includes(x))) {
+        this.balances.set(c.from.id, this.balanceOf(c.from.id) + c.amount)
+        out.push({ type: 'dm', userId: c.from.id, text: `The ${naira(c.amount)} you sent to +${jid.split('@')[0]} wasn't claimed in ${CLAIM_DAYS} days, so it's back in your Kolo balance.` })
+      }
+      if (keep.length) this.claims.set(jid, keep)
+      else this.claims.delete(jid)
+    }
+    return out.map(sign)
   }
 
   // ── Kolo IDs: a short handle in place of a 0x address (their Roqqu username when they give one) ──
@@ -574,7 +649,15 @@ export class Kolo {
         const found = ids.map((w) => this.memberByKoloId(w) ?? msg.members.find((m) => key(m.name) === key(w)))
         const missing = ids.filter((_, i) => !found[i])
         if (missing.length) return [this.text(msg, `I don't know the Kolo ID ${missing.join(', ')}. Check the spelling, or ask them to send /id to see theirs.`)]
-        return this.pay(msg, amount, [...msg.mentions, ...(found as Member[])], [])
+        const people = [...msg.mentions, ...(found as Member[])]
+        // Nobody tagged: a contact card this replies to, a phone number, or a card sent privately.
+        if (!people.length) {
+          const phone = args.map(phoneArg).find(Boolean)
+          const shared = this.sharedContacts.get(msg.sender.id)
+          const contact = msg.contact ?? (phone ? { name: `+${phone}`, phone } : shared && Date.now() - shared.at < 30 * 60_000 ? shared.contact : undefined)
+          if (contact) return this.payContact(msg, args.filter((w) => !phoneArg(w)).map(parseAmount).find((n) => n !== undefined), contact)
+        }
+        return this.pay(msg, amount, people, [])
       }
       case 'id':
       case 'username':
@@ -1230,6 +1313,14 @@ const LABEL = '🐷 *Kolo*'
 
 // About one person, so answered in their DM (with a 👍 on the group message), never in the group.
 const PERSONAL = new Set(['balance', 'topup', 'cashout', 'limit', 'join', 'app', 'web', 'deleteaccount', 'send', 'id', 'username'])
+// Days a payment to someone not on Kolo waits for them before going back to the sender.
+const CLAIM_DAYS = 7
+// A Nigerian phone number typed in a message (0803…, 234803…, +234 803…) as 234… digits.
+const phoneArg = (w: string) => {
+  const d = w.replace(/[\s()-]/g, '').replace(/^\+/, '')
+  if (/^0[789]\d{9}$/.test(d)) return `234${d.slice(1)}`
+  return /^234[789]\d{9}$/.test(d) ? d : undefined
+}
 // A Kolo ID as stored: lower case letters, digits, dots and underscores, no @, at most 20.
 const cleanKoloId = (s: string) => s.trim().toLowerCase().replace(/^@/, '').replace(/[^a-z0-9._]/g, '').slice(0, 20)
 // About the group, so only done in the group.
@@ -1285,9 +1376,9 @@ export const FEATURES = {
   pay: {
     icon: '💸',
     name: 'Pay someone',
-    say: '/send @[name or Kolo ID] [amount], or Kolo send [name] [amount]',
-    short: 'Send money from your Kolo balance to someone in the group, or to any Kolo ID, instantly.',
-    long: 'Moves money from your Kolo balance to theirs straight away, and DMs them. Tag someone in the group, or use their Kolo ID (like @koda) to pay anyone on Kolo, even in another group. They can spend it on dues, send it on, or cash it out to their own wallet. Top up first with /topup if your balance is low.',
+    say: '/send @[name or Kolo ID] [amount], or /send [phone number] [amount]',
+    short: 'Send money from your Kolo balance to someone in the group, any Kolo ID, or any WhatsApp contact.',
+    long: 'Moves money from your Kolo balance to theirs straight away, and DMs them. Tag someone in the group, or use their Kolo ID (like @koda) to pay anyone on Kolo, even in another group. To pay someone who isn\'t on Kolo yet, reply to their WhatsApp contact card with /send 2k, send me their contact privately, or type their number (/send 08031234567 2k). I message them a link to open a free wallet, and the money waits for them; if they don\'t claim it within 7 days, it comes back to you. Top up first with /topup if your balance is low.',
   },
   id: {
     icon: '🪪',
