@@ -286,11 +286,17 @@ createServer(async (req, res) => {
     return
   }
   // Kolo's web menu (/app): the page, what it shows, and actions run as the link's owner.
-  const app = req.url?.match(/^\/app\/([a-f0-9]{32})(\/state|\/do)?$/)
+  const app = req.url?.match(/^\/app\/([a-f0-9]{32})(\/state|\/do|\/logout)?$/)
   if (app) {
     const session = kolo.appSession(app[1])
     if (!app[2]) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(APP_PAGE)
+      return
+    }
+    // Log out: end this link now. A new one comes from /app in WhatsApp.
+    if (app[2] === '/logout' && req.method === 'POST') {
+      kolo.endAppSession(app[1])
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ kolo: koloNumber }))
       return
     }
     if (!session) {
@@ -300,7 +306,7 @@ createServer(async (req, res) => {
     const { chatId, member } = session
     const others = (groupMembers.get(chatId) ?? []).filter((id) => id !== member.id).map((id) => ({ id, name: names.get(id) ?? id.split('@')[0] }))
     if (app[2] === '/state') {
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ name: member.name, group: groupNames.get(chatId) ?? 'Your group', members: others, ...kolo.appSummary(chatId, member.id) }))
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ name: member.name, group: groupNames.get(chatId) ?? 'Your group', kolo: koloNumber, members: others, ...kolo.appSummary(chatId, member.id) }))
       return
     }
     let body = ''

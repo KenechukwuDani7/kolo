@@ -1,6 +1,7 @@
 // Kolo's web menu: everything Kolo does in the group, with taps. Opened from the private
 // link /app DMs (KOLO_URL/app/<token>); the token says who you are and which group.
 // What you do here is posted in the group like normal, so the group always sees it.
+import { icon } from './icons.js'
 import { FAVICON, LOGO_SPRITE, logo } from './logo.js'
 
 export const APP_PAGE = `<!doctype html>
@@ -41,9 +42,22 @@ ${FAVICON}
   .muted { color: var(--muted); font-size: 14px; }
   .hint { margin-top: 18px; text-align: center; }
   [hidden] { display: none !important; }
+  .tile .ti { display: block; width: 28px; height: 28px; margin: 2px auto 6px; color: var(--rose-deep); }
+  .right { display: flex; align-items: center; gap: 10px; }
+  .out { display: inline-flex; align-items: center; gap: 6px; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); border-radius: 12px; padding: 7px 11px; font: 700 14px "Inter", sans-serif; cursor: pointer; }
+  .out .ic { width: 17px; height: 17px; }
+  .bye { text-align: center; padding: 40px 8px; }
+  .bye a { display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; border-radius: 16px; padding: 14px; margin-top: 18px; font: 700 16px "Inter", sans-serif; color: #fff; background: linear-gradient(180deg, var(--rose-top), var(--rose)); }
+  .bye .ic { width: 20px; height: 20px; }
 </style></head>
 <body>${LOGO_SPRITE}<main>
-  <div class="top"><div class="brand">${logo(30)}Kolo</div><div class="group" id="group"></div></div>
+  <div class="top"><div class="brand">${logo(30)}Kolo</div><div class="right"><div class="group" id="group"></div><button class="out" id="logout">${icon('log-out')}Log out</button></div></div>
+  <div class="bye" id="bye" hidden>
+    <h1>You're logged out</h1>
+    <p class="muted">This menu link no longer works, even if someone else has it. To come back, send <b>/app</b> to Kolo on WhatsApp and you'll get a fresh private link.</p>
+    <a class="go" id="back" href="https://wa.me/">${icon('message-circle')}Open Kolo on WhatsApp</a>
+  </div>
+  <div id="menu">
   <h1 id="hello">Loading…</h1>
   <div class="stats">
     <div class="stat"><div class="label">Your Kolo balance</div><div class="num" id="bal">₦0</div></div>
@@ -65,6 +79,7 @@ ${FAVICON}
   </div>
   <div class="reply" id="reply" hidden></div>
   <p class="muted hint">This link is only for you and works for 30 minutes. Everything you do here also shows in the group.</p>
+  </div>
 </main>
 <script>
   const $ = (id) => document.getElementById(id)
@@ -72,24 +87,24 @@ ${FAVICON}
   const base = location.pathname.replace(/\\/$/, '')
   // need: which inputs the action takes. people: 'many' | 'one'.
   const ACTIONS = [
-    { id: 'topup', icon: '➕', name: 'Top up', help: 'Get a pay link that adds money to your Kolo balance.', amount: true },
-    { id: 'send', icon: '💸', name: 'Send', help: 'Send money from your Kolo balance to someone in the group.', amount: true, people: 'many' },
-    { id: 'split', icon: '🍔', name: 'Split a bill', help: 'You paid for something shared. Pick who shared it; each gets a link to pay you back.', amount: true, people: 'many' },
-    { id: 'spend', icon: '🏦', name: 'Spend pot', help: 'Pay someone from the group pot. The group votes first.', amount: true, people: 'one', text: 'What is it for? e.g. projector' },
-    { id: 'cashout', icon: '🏧', name: 'Cash out', help: 'Move money from your Kolo balance to your own wallet.', amount: true },
-    { id: 'dues', icon: '💰', name: 'Start dues', help: 'Everyone in the group pays the same amount. Each gets their own pay link.', amount: true, text: 'What is it for? e.g. Class dues' },
-    { id: 'poll', icon: '🗳️', name: 'Group vote', help: 'Start a yes/no vote in the group.', text: 'The question, e.g. Should we buy a projector?' },
-    { id: 'remind', icon: '⏰', name: 'Remind', help: 'Tag everyone who has not paid the current dues.' },
-    { id: 'status', icon: '📊', name: 'Who paid', help: 'See who has paid and who has not.' },
-    { id: 'limit', icon: '📉', name: 'My limit', help: "How much of your wallet's daily limit is left today." },
-    { id: 'close', icon: '✅', name: 'Close dues', help: 'Organiser only: end the current collection.' },
-    { id: 'balance', icon: '👛', name: 'Balance', help: 'Your Kolo balance.' },
+    { id: 'topup', icon: '${icon('circle-plus', 'ti')}', name: 'Top up', help: 'Get a pay link that adds money to your Kolo balance.', amount: true },
+    { id: 'send', icon: '${icon('send', 'ti')}', name: 'Send', help: 'Send money from your Kolo balance to someone in the group.', amount: true, people: 'many' },
+    { id: 'split', icon: '${icon('receipt', 'ti')}', name: 'Split a bill', help: 'You paid for something shared. Pick who shared it; each gets a link to pay you back.', amount: true, people: 'many' },
+    { id: 'spend', icon: '${icon('landmark', 'ti')}', name: 'Spend pot', help: 'Pay someone from the group pot. The group votes first.', amount: true, people: 'one', text: 'What is it for? e.g. projector' },
+    { id: 'cashout', icon: '${icon('banknote', 'ti')}', name: 'Cash out', help: 'Move money from your Kolo balance to your own wallet.', amount: true },
+    { id: 'dues', icon: '${icon('hand-coins', 'ti')}', name: 'Start dues', help: 'Everyone in the group pays the same amount. Each gets their own pay link.', amount: true, text: 'What is it for? e.g. Class dues' },
+    { id: 'poll', icon: '${icon('vote', 'ti')}', name: 'Group vote', help: 'Start a yes/no vote in the group.', text: 'The question, e.g. Should we buy a projector?' },
+    { id: 'remind', icon: '${icon('bell-ring', 'ti')}', name: 'Remind', help: 'Tag everyone who has not paid the current dues.' },
+    { id: 'status', icon: '${icon('list-checks', 'ti')}', name: 'Who paid', help: 'See who has paid and who has not.' },
+    { id: 'limit', icon: '${icon('gauge', 'ti')}', name: 'My limit', help: "How much of your wallet's daily limit is left today." },
+    { id: 'close', icon: '${icon('circle-check', 'ti')}', name: 'Close dues', help: 'Organiser only: end the current collection.' },
+    { id: 'balance', icon: '${icon('wallet', 'ti')}', name: 'Balance', help: 'Your Kolo balance.' },
   ]
   let state, current, picked = new Set()
 
   async function load() {
     const res = await fetch(base + '/state')
-    if (!res.ok) { $('hello').textContent = 'This link has expired.'; document.querySelector('.stats').hidden = true; $('tiles').innerHTML = '<p class="muted">Type /app in your group and Kolo will DM you a fresh one.</p>'; return }
+    if (!res.ok) { $('hello').textContent = 'This link has expired.'; document.querySelector('.stats').hidden = true; $('logout').hidden = true; $('tiles').innerHTML = '<p class="muted" style="grid-column:1/-1">Type /app in your group and Kolo will DM you a fresh one.</p>'; return }
     state = await res.json()
     $('group').textContent = state.group
     $('hello').textContent = 'Hi ' + state.name.split(' ')[0] + ', what do you want to do?'
@@ -149,8 +164,23 @@ ${FAVICON}
   }
   $('paydues').onclick = () => run({ action: 'paydues' }, $('paydues'))
 
+  // Log out: the server forgets this link, so it stops working everywhere.
+  function loggedOut(number) {
+    $('menu').hidden = true
+    $('logout').hidden = true
+    $('bye').hidden = false
+    if (number) $('back').href = 'https://wa.me/' + number
+  }
+  $('logout').onclick = async () => {
+    $('logout').disabled = true
+    try {
+      const res = await fetch(base + '/logout', { method: 'POST' })
+      loggedOut((await res.json()).kolo || (state && state.kolo))
+    } catch { $('logout').disabled = false }
+  }
+
   for (const a of ACTIONS) {
-    const t = Object.assign(document.createElement('button'), { className: 'tile', innerHTML: '<b>' + a.icon + '</b>' + a.name })
+    const t = Object.assign(document.createElement('button'), { className: 'tile', innerHTML: a.icon + a.name })
     t.dataset.id = a.id
     t.onclick = () => open(a)
     $('tiles').append(t)

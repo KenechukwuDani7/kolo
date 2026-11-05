@@ -242,6 +242,11 @@ export class Kolo {
     }
   }
 
+  // Log out of the web menu: the link stops working at once.
+  endAppSession(token: string) {
+    this.appTokens.delete(token)
+  }
+
   // Who an /app link belongs to, while it's valid (30 minutes).
   appSession(token: string) {
     const s = this.appTokens.get(token)
