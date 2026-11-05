@@ -156,6 +156,12 @@ ${FAVICON}
   .flow .box { flex: 1; }
   .arrow { align-self: center; color: var(--rose); }
   .flow .box.hold { border: 2px solid var(--rose); }
+  .pots { display: grid; grid-template-columns: 1fr auto 1fr; gap: 20px; align-items: center; }
+  .pots .box.hold { border: 2px solid var(--rose); }
+  .pots ul { margin: 14px 0 0; padding-left: 20px; color: var(--muted); font-size: 16px; }
+  .pots li + li { margin-top: 4px; }
+  .move { display: grid; justify-items: center; gap: 8px; color: var(--rose); }
+  .move .ic { width: 34px; height: 34px; }
 
   table { width: 100%; border-collapse: collapse; font-size: 16px; }
   th, td { text-align: left; padding: 14px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -181,6 +187,7 @@ ${FAVICON}
     .phone { justify-self: center; }
     .g4, .g5 { grid-template-columns: 1fr 1fr } .g3 { grid-template-columns: 1fr }
     .flow { flex-direction: column } .arrow { transform: rotate(90deg) }
+    .pots { grid-template-columns: 1fr; } .move .ic { transform: rotate(90deg); }
     .links { display: none }
   }
   @media (max-width: 560px) {
@@ -265,6 +272,25 @@ ${LOGO_SPRITE}
     ${box('fingerprint', 'Your fingerprint is the key', 'No password, no seed phrase. Your wallet opens with your fingerprint or face.')}
     ${box('shield-check', 'A daily limit Kolo can’t break', 'You set it, and the blockchain enforces it. Even Kolo can’t spend past it.')}
     ${box('ear', 'Only listens when you call it', 'Kolo answers messages meant for it and ignores the rest of your chat.')}
+  </div>
+</div></section>
+
+<section id="pots"><div class="wrap">
+  <div class="head"><span class="eyebrow">Your Kolo balance and your wallet</span><h2>Two places for your money.</h2><p>Your Kolo balance is for paying in the group. Your wallet is yours alone. <code>/cashout</code> moves money from one to the other.</p></div>
+  <div class="pots">
+    <div class="box">
+      <span class="badge">${icon('banknote')}</span>
+      <h3>Kolo balance</h3>
+      <p>Money you’ve put into Kolo, held by Roqqu. Fill it with <code>/topup</code>, or when someone sends you money or pays back a split.</p>
+      <ul><li>Pays your dues, even on USSD</li><li>Sends to members or Kolo IDs: <code>/send @ada 1k</code></li><li>Moves when you ask in the chat</li></ul>
+    </div>
+    <div class="move"><span>${icon('arrow-right')}</span><code>/cashout 5k</code></div>
+    <div class="box hold">
+      <span class="badge">${icon('fingerprint')}</span>
+      <h3>Your wallet</h3>
+      <p>Your own account on the blockchain. Only your fingerprint or face controls it, and it stays yours even if you leave Kolo.</p>
+      <ul><li>Keep your money</li><li>Send it anywhere with your fingerprint</li><li>Kolo can only pay group things, up to your daily limit</li></ul>
+    </div>
   </div>
 </div></section>
 
