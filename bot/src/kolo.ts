@@ -121,6 +121,8 @@ export class Kolo {
   private wallets = new Map<string, string>()
   // Who owns each wallet (member id → name and the group they joined from).
   private owners = new Map<string, { name: string; chatId: string }>()
+  // /app links: private token → who may use the Kolo web menu, for which group, until when.
+  private appTokens = new Map<string, { chatId: string; member: Member; expires: number }>()
   // Members who asked to delete their account: member id → when the request expires.
   private pendingDeletes = new Map<string, number>()
   // Each group's own Roqqu account address.
@@ -219,6 +221,24 @@ export class Kolo {
       : job.kind === 'cashout' ? `${job.member.name}'s ${naira(job.amount)} cash-out`
       : `the ${naira(job.spend.amount)} payment to ${job.spend.to.name}`
     return { type: 'text', chatId: job.chatId, text: `Roqqu is answering again, but it turned down ${what}: ${(error as Error).message}. No money moved.` }
+  }
+
+  // What the web menu shows at the top: your balance, the pot, and the collection running.
+  appSummary(chatId: string, memberId: string) {
+    const c = this.collections.get(chatId)
+    return {
+      balance: this.balanceOf(memberId),
+      pot: this.pot(chatId),
+      wallet: this.wallets.get(memberId),
+      dues: c && { title: c.title, amount: c.amount, paid: c.paid.size, of: c.members.length, youPaid: c.paid.has(memberId), youOwe: c.members.some((m) => m.id === memberId) && !c.paid.has(memberId) },
+    }
+  }
+
+  // Who an /app link belongs to, while it's valid (30 minutes).
+  appSession(token: string) {
+    const s = this.appTokens.get(token)
+    if (!s || s.expires < Date.now()) return undefined
+    return s
   }
 
   // The wallet page's top-up button while Roqqu is down: keep it and DM the link later.
@@ -436,6 +456,9 @@ export class Kolo {
         return this.confirmByHand(msg)
       case 'close':
         return this.close(msg)
+      case 'app':
+      case 'web':
+        return this.appLink(msg)
       case 'send': {
         // "/send @Excel 2k" (the amount can come before or after the tag)
         const amount = args.map(parseAmount).find((n) => n !== undefined)
@@ -492,6 +515,8 @@ export class Kolo {
         return this.status(msg)
       case 'join':
         return this.join(msg)
+      case 'app':
+        return this.appLink(msg)
       case 'cashout':
         return this.cashout(msg, intent.amount ?? undefined)
       case 'limit':
@@ -634,6 +659,19 @@ export class Kolo {
     collection.paid.set(msg.sender.id, msg.sender.name)
     this.credit(msg.chatId, collection.amount)
     return [this.duesCard(msg.chatId, collection, `${msg.sender.name} has paid.`)]
+  }
+
+  // "/app": DM a private link to Kolo's web menu, where everything here works with taps.
+  private appLink(msg: Incoming): Action[] {
+    if (!msg.isGroup) return [this.text(msg, 'Type /app in your group, so I know which group the menu is for.')]
+    for (const [t, s] of this.appTokens) if (s.member.id === msg.sender.id || s.expires < Date.now()) this.appTokens.delete(t)
+    const token = crypto.randomUUID().replace(/-/g, '')
+    this.appTokens.set(token, { chatId: msg.chatId, member: msg.sender, expires: Date.now() + 30 * 60_000 })
+    const base = (process.env.KOLO_URL ?? `http://localhost:${process.env.QR_PORT ?? 3117}`).replace(/\/$/, '')
+    return [
+      { type: 'dm', userId: msg.sender.id, text: `Your Kolo menu: ${base}/app/${token}\nPay dues, top up, send, split and more with a tap. The link is only for you and works for 30 minutes. Don't share it.` },
+      this.text(msg, `${msg.sender.name}, I've sent you your private menu link in DM.`),
+    ]
   }
 
   // "/close": the organiser ends the collection. Payments that land later still go to the pot.
@@ -1118,6 +1156,13 @@ export const FEATURES = {
     short: 'Add money to your Kolo balance with your own Roqqu pay link.',
     long: 'I DM you your own Roqqu pay link for the amount you choose. Once Roqqu confirms it, the money is in your Kolo balance, ready for dues on USSD or a cash-out. /balance shows what you have.',
   },
+  app: {
+    icon: '📱',
+    name: 'Kolo menu',
+    say: '/app',
+    short: 'Get a private link to do all of this with taps instead of typing.',
+    long: 'I DM you a private link to the Kolo menu: pay your dues, top up, send money, split a bill, spend from the pot and more, with taps. It only works for you, for 30 minutes. What you do there shows in the group like normal.',
+  },
   deleteaccount: {
     icon: '🗑️',
     name: 'Delete your account',
@@ -1146,7 +1191,7 @@ ${Object.values(FEATURES)
 Want more on one? Type /help [feature], e.g. /help split`
 
 // "/help split", "/help bill", "/help vote" → the feature they mean
-const ALIASES: Record<string, Feature> = { delete: 'deleteaccount', leave: 'deleteaccount', fund: 'topup', deposit: 'topup', balance: 'topup', withdrawal: 'cashout', cash: 'cashout', pot: 'spend', treasury: 'spend', withdraw: 'spend', bill: 'split', share: 'split', vote: 'poll', voting: 'poll', account: 'join', wallet: 'join', send: 'pay', collect: 'dues', collection: 'dues', reminder: 'remind', progress: 'status' }
+const ALIASES: Record<string, Feature> = { web: 'app', website: 'app', menu: 'app', delete: 'deleteaccount', leave: 'deleteaccount', fund: 'topup', deposit: 'topup', balance: 'topup', withdrawal: 'cashout', cash: 'cashout', pot: 'spend', treasury: 'spend', withdraw: 'spend', bill: 'split', share: 'split', vote: 'poll', voting: 'poll', account: 'join', wallet: 'join', send: 'pay', collect: 'dues', collection: 'dues', reminder: 'remind', progress: 'status' }
 function featureFor(word: string): Feature | undefined {
   const w = word.trim().toLowerCase().replace(/^\//, '').split(/\s+/)[0]
   if (!w) return undefined

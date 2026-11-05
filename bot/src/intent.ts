@@ -13,7 +13,7 @@ try {
 
 export const Intent = z.object({
   action: z
-    .enum(['dues', 'paid', 'split', 'pay', 'spend', 'cashout', 'topup', 'balance', 'deleteaccount', 'limit', 'poll', 'remind', 'status', 'join', 'help', 'chat'])
+    .enum(['dues', 'paid', 'split', 'pay', 'spend', 'cashout', 'topup', 'balance', 'deleteaccount', 'limit', 'poll', 'remind', 'status', 'join', 'app', 'help', 'chat'])
     .describe('The single thing the sender wants Kolo to do'),
   amount: z.number().nullable().describe('Amount in naira as a plain number (2k → 2000), or null'),
   title: z.string().nullable().describe('What the money is for, e.g. "CSC 301 project fund", "shawarma" or "projector", or null'),
@@ -59,6 +59,7 @@ Actions:
 - split: share a bill between people ("split 15k suya between me, Excel and Clinton"), or bill/charge someone for something the sender paid ("send Clinton the bill for shawarma", "Ada owes me 3k", "charge Excel for the uber"). When billing someone, includeSender is false and people is just them. If the money should go to someone other than the sender ("split Clinton's 6k diapers bill among all of us", "everybody pay Ada back for the cake"), set payee to that person; people is everyone sharing the bill (the payee too if they share it), and "all of us" / "everyone in this group" means every member listed.
 - pay: the sender sends their OWN money to specific people ("abeg send Chidi 2k for data", "pay Ada back her 5k")
 - spend: pay someone out of the GROUP POT / treasury / the money we collected ("use 5k from the pot to pay Excel for the projector", "make the pot pay Clinton 3k for printing", "release 10k from our money give Ada for the venue"). people = who receives it, title = what it is for.
+- app: wants the Kolo web menu / website / app link, to do things with taps ("send me the kolo website", "open the menu for me")
 - poll: start a yes/no group vote ("make we vote whether we go put 50k inside MTN")
 - remind: nudge people who haven't paid ("tell Clinton to pay up", "remind everybody wey never pay")
 - status: ask who has or hasn't paid, or how much is collected ("who never pay?", "how far the money?")

@@ -192,7 +192,9 @@ const routes: Record<string, (body: any) => Promise<unknown>> = {
   async '/api/me'({ credentialId }: { credentialId: string }) {
     const [address, w] = byCredential(credentialId)
     const balance = await balanceOf(address as Address)
-    return { address, publicKey: w.publicKey, balance: weiToNaira(balance), balanceEth: formatEther(balance), linkedToKolo: !w.revoked }
+    // The owner's name for the card, from Kolo (none once they've left Kolo).
+    const owner = w.revoked ? {} : await fetch(`${BOT_URL}/wallet/balance?address=${address}`).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))
+    return { address, publicKey: w.publicKey, name: owner.name, balance: weiToNaira(balance), balanceEth: formatEther(balance), linkedToKolo: !w.revoked }
   },
 
   async '/api/withdraw/prepare'({ credentialId, to }: { credentialId: string; to: string }) {

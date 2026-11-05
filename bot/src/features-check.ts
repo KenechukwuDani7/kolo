@@ -95,6 +95,16 @@ expect(paidFromBalance.ok && kolo.balanceOf(ike.id) === before.ike - 2000 && kol
 const again = kolo.payLinkFromBalance(ikeLinkRef)
 expect(!again.ok && again.reason.includes('already'), "the same link can't be paid twice", JSON.stringify(again))
 
+// /app: a private menu link for the sender, for this group, that expires.
+out = await kolo.handle(say(excel, '/app'))
+const token = words(out).match(/\/app\/([a-f0-9]{32})/)?.[1] ?? ''
+expect(out.some((a) => a.type === 'dm' && a.userId === excel.id) && kolo.appSession(token)?.member.id === excel.id, '/app DMs Excel a private menu link', words(out))
+expect(!kolo.appSession('0'.repeat(32)), 'a made-up menu link opens nothing')
+const summary = kolo.appSummary(group, excel.id)
+expect(summary.dues?.title === 'Water' && summary.dues.youOwe, 'the menu shows the dues Excel owes', JSON.stringify(summary))
+await kolo.handle(say(excel, '/app'))
+expect(!kolo.appSession(token), 'asking again replaces the old link')
+
 // State survives a restart (snapshot → restore).
 const restored = new Kolo(undefined, payments)
 restored.restore(JSON.parse(JSON.stringify(kolo.snapshot())))

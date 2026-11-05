@@ -23,6 +23,7 @@ import pino from 'pino'
 import qrcode from 'qrcode-terminal'
 import { Kolo, isAddressed, type Action, type Incoming, type Member, type Payments, type WalletInfo } from './kolo.js'
 import { createPaymentLink, decryptWebhook, deposits, generateWallet, nairaPerDollar, roqquEnabled, send, setOutage } from './roqqu.js'
+import { APP_PAGE } from './app-page.js'
 import { checkoutPage, simLinks, simulatedPayments } from './sim-pay.js'
 import { ussd } from './ussd.js'
 import { USSD_PAGE } from './ussd-page.js'
@@ -281,6 +282,56 @@ createServer(async (req, res) => {
       return 'END Kolo is busy. Please try again.'
     })
     res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end(reply)
+    return
+  }
+  // Kolo's web menu (/app): the page, what it shows, and actions run as the link's owner.
+  const app = req.url?.match(/^\/app\/([a-f0-9]{32})(\/state|\/do)?$/)
+  if (app) {
+    const session = kolo.appSession(app[1])
+    if (!app[2]) {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(APP_PAGE)
+      return
+    }
+    if (!session) {
+      res.writeHead(401, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'This link has expired. Type /app in your group for a fresh one.' }))
+      return
+    }
+    const { chatId, member } = session
+    const others = (groupMembers.get(chatId) ?? []).filter((id) => id !== member.id).map((id) => ({ id, name: names.get(id) ?? id.split('@')[0] }))
+    if (app[2] === '/state') {
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ name: member.name, group: groupNames.get(chatId) ?? 'Your group', members: others, ...kolo.appSummary(chatId, member.id) }))
+      return
+    }
+    let body = ''
+    for await (const chunk of req) body += chunk
+    try {
+      const { action, amount, text, people } = JSON.parse(body) as { action: string; amount?: string; text?: string; people?: string[] }
+      let actions: Action[]
+      if (action === 'paydues') {
+        const paid = kolo.payFromBalance(chatId, member.id)
+        if (!paid.ok) throw new Error(paid.reason)
+        actions = paid.actions
+      } else {
+        // The same commands as typing in the group, so everything behaves (and shows) the same.
+        const words: Record<string, string> = {
+          topup: `/topup ${amount}`, send: `/send ${amount}`, split: `/split ${amount} me`, spend: `/spend ${amount} ${text}`,
+          cashout: `/cashout ${amount}`, dues: `/dues ${amount} ${text}`, poll: `/poll ${text}`,
+          remind: '/remind', status: '/status', limit: '/limit', close: '/close', balance: '/balance',
+        }
+        if (!words[action]) throw new Error('Unknown action')
+        const mentions = others.filter((m) => people?.includes(m.id))
+        actions = await kolo.handle({ chatId, isGroup: true, sender: member, members: [member, ...others], text: words[action], mentions, mentionsBot: false })
+      }
+      await performNow?.(actions)
+      saveState()
+      // Show the person what Kolo said to them or to the group.
+      const replies = actions
+        .filter((a) => (a.type === 'dm' ? a.userId === member.id : a.type !== 'poll' && a.chatId === chatId))
+        .map((a) => stripLabel(a.type === 'image' ? a.caption : (a as { text: string }).text))
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ replies }))
+    } catch (error) {
+      res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: (error as Error).message }))
+    }
     return
   }
   // Kolo's test checkout (ROQQU_MODE=simulate): the page, and its Completed / Underpaid / Failed buttons.

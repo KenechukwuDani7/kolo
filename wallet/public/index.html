@@ -44,6 +44,13 @@
   .brand { display: flex; align-items: center; gap: 8px; font: 800 20px "Bricolage Grotesque", system-ui, sans-serif; }
   .brand-dot { width: 30px; height: 30px; border-radius: 10px; background: linear-gradient(180deg, var(--pink-top), var(--pink)); box-shadow: inset 0 -2px 0 rgba(217, 87, 122, .45), 0 6px 14px -6px rgba(242, 72, 110, .5); display: grid; place-items: center; font-size: 16px; }
   .steps { display: flex; gap: 6px; }
+  .menubtn { display: flex; align-items: center; gap: 6px; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); border-radius: 14px; padding: 8px 12px; font: 700 14px "Plus Jakarta Sans", system-ui, sans-serif; cursor: pointer; }
+  .menubtn svg { width: 18px; height: 18px; }
+  .sheet { margin: -4px 0 14px; padding: 8px; }
+  .steps[hidden], .menubtn[hidden], .sheet[hidden], .sheet button[hidden] { display: none; }
+  .sheet button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 12px; border-radius: 12px; font: 600 16px "Plus Jakarta Sans", system-ui, sans-serif; color: var(--ink); cursor: pointer; }
+  .sheet button:hover { background: var(--tint); }
+  .sheet p { margin: 6px 12px 8px; font-size: 14px; }
   .steps i { width: 12px; height: 12px; border-radius: 50%; background: var(--line); transition: background .3s, transform .3s; }
   .steps i.on { background: radial-gradient(circle at 35% 30%, var(--gold-top), var(--gold) 60%, var(--gold-deep)); transform: scale(1.15); }
 
@@ -177,7 +184,15 @@
   <div class="top">
     <div class="brand"><span class="brand-dot" aria-hidden="true">🐷</span>Kolo</div>
     <div class="steps" aria-hidden="true"><i class="on"></i><i></i><i></i></div>
+    <button class="menubtn" id="menu" hidden aria-expanded="false" aria-controls="menu-sheet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>Menu</button>
   </div>
+  <nav class="sheet card" id="menu-sheet" hidden>
+    <button data-go="topup">➕ Top up my Kolo balance</button>
+    <button data-go="spending">📉 Today's spending</button>
+    <button data-go="mine">👛 My wallet: see it, send it out</button>
+    <button data-go="whatsapp">💬 Back to Kolo on WhatsApp</button>
+    <p class="muted">Everything else (pay dues, send, split, spend from the pot): type <b>/app</b> in your group and Kolo DMs you a private menu link.</p>
+  </nav>
 
   <!-- 1. Welcome -->
   <section class="screen on card" id="s-welcome">
@@ -225,16 +240,15 @@
   <!-- My wallet: sign in with the passkey, see the balance, send it anywhere -->
   <section class="screen card" id="s-mine">
     <h1>My wallet</h1>
-    <p class="muted" id="mine-sub">Signed in with your fingerprint. This works even if you leave Kolo.</p>
+    <p class="muted" id="mine-sub">What's in your wallet, and where to send it.</p>
     <div class="wallet-card">
       <div class="wc-row"><span class="wc-brand">🐷 Kolo</span><span class="wc-chip"></span></div>
       <div class="wc-holder">
-        <div class="wc-name">Your wallet</div>
+        <div class="wc-name" id="mine-name">Your wallet</div>
         <div class="wc-addr" id="mine-addr">0x0000…0000</div>
       </div>
       <div class="wc-row">
         <div><div class="wc-label">In this wallet</div><div class="wc-limit" id="mine-bal">₦0</div></div>
-        <div style="text-align:right"><div class="wc-label">Controlled by</div><div>Only you</div></div>
       </div>
     </div>
     <label class="sb-label" for="send-to">Send everything to this wallet address</label>
@@ -280,7 +294,6 @@
         </div>
         <div class="wc-row">
           <div><div class="wc-label">Daily limit</div><div class="wc-limit" id="wc-limit">₦10,000</div></div>
-          <div style="text-align:right"><div class="wc-label">Secured by</div><div>Your fingerprint</div></div>
         </div>
       </div>
       <div class="balancebox" aria-live="polite">
@@ -344,6 +357,10 @@
   function show(id) {
     for (const s of order) $(s).classList.toggle('on', s === id)
     const step = id === 's-mine' ? 2 : Math.min(order.indexOf(id), 2)
+    const inside = id === 's-done' || id === 's-mine'
+    document.querySelector('.steps').hidden = inside
+    $('menu').hidden = !inside
+    if (!inside) $('menu-sheet').hidden = true
     document.querySelectorAll('.steps i').forEach((dot, i) => dot.classList.toggle('on', i <= step))
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -511,6 +528,25 @@
 
   $('back').onclick = () => { location.href = koloChat }
 
+  $('menu').onclick = () => {
+    const open = $('menu-sheet').hidden
+    $('menu-sheet').hidden = !open
+    $('menu').setAttribute('aria-expanded', open)
+    // Wallet-only menu when there's no Kolo account on this screen (My wallet after leaving).
+    $('menu-sheet').querySelectorAll('[data-go=topup],[data-go=spending]').forEach((b) => (b.hidden = !wallet))
+  }
+  $('menu-sheet').onclick = (e) => {
+    const go = e.target.closest('button')?.dataset.go
+    if (!go) return
+    $('menu-sheet').hidden = true
+    if (go === 'whatsapp') location.href = koloChat
+    else if (go === 'mine') (credential ? $('manage') : $('open-mine')).click()
+    else {
+      show('s-done')
+      setTimeout(() => document.querySelector(go === 'topup' ? '.balancebox' : '.spendbox').scrollIntoView({ behavior: 'smooth', block: 'center' }), 300)
+    }
+  }
+
   // ── My wallet: the owner's way in, with or without a Kolo account ──
   let mine // { credentialId, address, publicKey }
   const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
@@ -520,9 +556,10 @@
     mine = { credentialId, address: me.address, publicKey: me.publicKey }
     $('mine-addr').textContent = `${me.address.slice(0, 6)}…${me.address.slice(-4)}`
     $('mine-bal').textContent = naira(me.balance)
+    $('mine-name').textContent = me.name || 'Your wallet'
     $('mine-sub').textContent = me.linkedToKolo
-      ? 'Signed in with your fingerprint. Only you can move what is in here.'
-      : 'Your Kolo account is closed, but this wallet is still yours. Send what is in it anywhere you like.'
+      ? "What's in your wallet, and where to send it."
+      : 'Your Kolo account is closed. You can still send what is in this wallet anywhere.'
     show('s-mine')
   }
 
@@ -566,7 +603,7 @@
       status($('mine-status'), 'Sending…', 'busy')
       const r = await api('/api/withdraw/submit', { credentialId: mine.credentialId, op: { ...op, signature } })
       $('mine-bal').textContent = naira(r.balance)
-      status($('mine-status'), 'Sent. Only your fingerprint could approve that, not Kolo.', 'ok')
+      status($('mine-status'), 'Sent.', 'ok')
       proof('Withdrawal', r.tx)
     } catch (e) {
       status($('mine-status'), e.name === 'NotAllowedError' ? 'Cancelled. Nothing was sent.' : `Couldn't send: ${e.message}`, 'bad')
