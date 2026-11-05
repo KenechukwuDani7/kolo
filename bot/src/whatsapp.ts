@@ -21,7 +21,7 @@ import makeWASocket, {
 import pino from 'pino'
 import qrcode from 'qrcode-terminal'
 import { Kolo, isAddressed, type Action, type Incoming, type Member, type Payments, type WalletInfo } from './kolo.js'
-import { createPaymentLink, decryptWebhook, deposits, generateWallet, nairaPerDollar, roqquEnabled, send } from './roqqu.js'
+import { createPaymentLink, decryptWebhook, deposits, generateWallet, nairaPerDollar, roqquEnabled, send, setOutage } from './roqqu.js'
 import { ussd } from './ussd.js'
 import { USSD_PAGE } from './ussd-page.js'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -179,6 +179,24 @@ setInterval(async () => {
     console.warn('deposit watch:', (error as Error).message)
   }
 }, Number(process.env.ROQQU_POLL_MS ?? 15_000))
+
+// Requests kept while Roqqu wasn't answering (pay links, top-ups, cash-outs, pot payments)
+// go out as soon as it answers again. One retry run at a time: a Roqqu timeout is 45s.
+let retrying = false
+setInterval(async () => {
+  if (retrying || !kolo.waitingCount() || !performNow) return
+  retrying = true
+  try {
+    const actions = await kolo.retryWaiting()
+    if (actions.length) console.log(`Roqqu is back: sent ${actions.length} kept message(s), ${kolo.waitingCount()} still waiting`)
+    await performNow(actions)
+    saveState()
+  } catch (error) {
+    console.warn('retrying kept requests:', (error as Error).message)
+  } finally {
+    retrying = false
+  }
+}, Number(process.env.ROQQU_RETRY_MS ?? 30_000))
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'warn' })
 
 // Poll creation messages Kolo sent: needed to decrypt votes, which arrive encrypted.
@@ -258,9 +276,18 @@ createServer(async (req, res) => {
       const naira = Math.round(Number(amount))
       if (!owner) throw new Error('unknown wallet')
       if (!(naira >= 1500 && naira <= 200_000)) throw new Error('amount must be between ₦1,500 and ₦200,000')
-      const url = await kolo.topupLink({ id: owner.memberId, name: owner.name }, owner.chatId, naira)
+      const member = { id: owner.memberId, name: owner.name }
+      let reply
+      try {
+        reply = { url: await kolo.topupLink(member, owner.chatId, naira) }
+      } catch (error) {
+        if (!(error as { down?: boolean }).down) throw error
+        // Roqqu isn't answering: keep it, and the link comes on WhatsApp once it's back.
+        kolo.topupLater(member, owner.chatId, naira)
+        reply = { queued: "Roqqu, the payment service, isn't answering right now. Your top-up is saved and Kolo will send the link to your WhatsApp the moment it's back." }
+      }
       saveState()
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ url }))
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(reply))
     } catch (error) {
       res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: (error as Error).message }))
     }
@@ -304,6 +331,15 @@ createServer(async (req, res) => {
   const local = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(req.headers.host ?? '')
   if (!local) {
     res.writeHead(302, { location: '/ussd' }).end()
+    return
+  }
+  // Outage drill, for demos and tests: /outage?on=1 makes every Roqqu call fail as if
+  // Roqqu were down, /outage?on=0 brings it back. Local only, like the login page.
+  if (req.url?.startsWith('/outage')) {
+    const on = new URL(req.url, 'http://x').searchParams.get('on') === '1'
+    setOutage(on)
+    console.log(`Roqqu outage drill ${on ? 'ON' : 'OFF'}`)
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ outage: on, waiting: kolo.waitingCount() }))
     return
   }
   if (req.url === '/state') {

@@ -26,10 +26,21 @@ const lookup: typeof dns.lookup = ((host: string, options: any, callback: any) =
   })
 }) as any
 
+// Roqqu didn't answer (network error, timeout, server error, garbled reply), as opposed
+// to answering "no". Kolo keeps these requests and retries them; a "no" is reported at once.
+const down = (message: string) => Object.assign(new Error(message), { down: true })
+
+// Outage drill: while on, every call fails as if Roqqu were unreachable (see /outage in whatsapp.ts).
+let outage = false
+export const setOutage = (on: boolean) => {
+  outage = on
+}
+
 async function call<T>(method: 'GET' | 'POST', path: string, body?: Record<string, unknown>): Promise<T> {
+  if (outage) throw down(`Roqqu ${path}: not answering (outage drill)`)
   const url = new URL(BASE.pathname.replace(/\/$/, '') + path, BASE)
   const payload = body ? JSON.stringify(body) : undefined
-  const text = await new Promise<string>((resolve, reject) => {
+  const { status, text } = await new Promise<{ status: number; text: string }>((resolve, reject) => {
     const req = https.request(
       url,
       {
@@ -44,14 +55,20 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: Record<strin
       (res) => {
         let data = ''
         res.on('data', (chunk) => (data += chunk))
-        res.on('end', () => resolve(data))
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, text: data }))
       },
     )
-    req.on('timeout', () => req.destroy(new Error(`Roqqu ${path} timed out`)))
-    req.on('error', reject)
+    req.on('timeout', () => req.destroy(down(`Roqqu ${path} timed out`)))
+    req.on('error', (error) => reject((error as { down?: boolean }).down ? error : down(`Roqqu ${path}: ${error.message}`)))
     req.end(payload)
   })
-  const json = JSON.parse(text)
+  if (status >= 500) throw down(`Roqqu ${path}: server error ${status}`)
+  let json
+  try {
+    json = JSON.parse(text)
+  } catch {
+    throw down(`Roqqu ${path}: unreadable reply (${status})`)
+  }
   if (json.status !== 'success') throw new Error(`Roqqu ${path}: ${json.message}`)
   return json.data as T
 }

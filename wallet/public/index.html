@@ -451,7 +451,8 @@
       const amount = Number(b.dataset.amount)
       try {
         status($('topup-status'), `Making your ${naira(amount)} top-up link…`, 'busy')
-        const { url } = await api('/api/topup', { address: wallet.address, amount })
+        const { url, queued } = await api('/api/topup', { address: wallet.address, amount })
+        if (queued) return status($('topup-status'), queued, 'ok')
         window.open(url, '_blank')
         status($('topup-status'), 'Pay on the Roqqu page that opened. Your balance updates here once it lands.', 'ok')
       } catch (e) {

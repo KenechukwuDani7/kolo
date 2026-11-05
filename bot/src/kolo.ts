@@ -76,6 +76,18 @@ type PayRef = { chatId: string; memberId: string; kind?: 'topup'; amount?: numbe
 const potLine = (pot: number) => `Group pot: ${naira(pot)}`
 const payLinkText =(m: Member, c: Collection, url: string) =>
   `Hi ${m.name}! Your share of *${c.title}* is ${naira(c.amount)}.\nPay here (USDT or BTC, via Roqqu): ${url}\nI'll tick you in the group as soon as it lands.`
+const topupText = (amount: number, url: string) =>
+  `Top up ${naira(amount)} into your Kolo balance: ${url}\nPay with USDT or BTC through Roqqu. I'll message you as soon as it lands.`
+
+// A Roqqu request kept while Roqqu wasn't answering. Retried, oldest first, until it goes through.
+type Waiting =
+  | { kind: 'link'; chatId: string; member: Member }
+  | { kind: 'topup'; chatId: string; member: Member; amount: number }
+  | { kind: 'cashout'; chatId: string; member: Member; amount: number }
+  | { kind: 'spend'; chatId: string; spend: Spend; yes: number }
+// The payment adapter marks "Roqqu didn't answer" errors with down: true (see roqqu.ts).
+const isDown = (error: unknown) => (error as { down?: boolean } | undefined)?.down === true
+const DOWN = "Roqqu, the payment service I use, isn't answering right now."
 
 // "2k", "12.5k", "₦2,000", "2000" → number of naira
 export function parseAmount(raw: string): number | undefined {
@@ -110,6 +122,8 @@ export class Kolo {
   private pendingDeletes = new Map<string, number>()
   // Each group's own Roqqu account address.
   private groupAccounts = new Map<string, string>()
+  // Requests kept while Roqqu was down, sent by retryWaiting() once it answers again.
+  private waiting: Waiting[] = []
 
   // Everything Kolo must remember across restarts, as plain JSON.
   snapshot() {
@@ -122,6 +136,7 @@ export class Kolo {
       wallets: [...this.wallets],
       owners: [...this.owners],
       groupAccounts: [...this.groupAccounts],
+      waiting: this.waiting,
     }
   }
 
@@ -134,6 +149,61 @@ export class Kolo {
     this.wallets = new Map(s.wallets ?? [])
     this.owners = new Map(s.owners ?? [])
     this.groupAccounts = new Map(s.groupAccounts ?? [])
+    this.waiting = s.waiting ?? []
+  }
+
+  waitingCount = () => this.waiting.length
+
+  // Send what was kept while Roqqu was down, oldest first. Stops at the first request
+  // Roqqu still doesn't answer, so the rest keep their place in the queue.
+  async retryWaiting(): Promise<Action[]> {
+    const out: Action[] = []
+    const linksSent = new Map<string, string[]>() // chat → who got their pay link
+    while (this.waiting.length) {
+      const job = this.waiting[0]
+      try {
+        const actions = await this.runWaiting(job)
+        if (job.kind === 'link' && actions.length) linksSent.set(job.chatId, [...(linksSent.get(job.chatId) ?? []), job.member.name])
+        out.push(...actions)
+      } catch (error) {
+        if (isDown(error)) break
+        console.error('kept request failed:', error)
+        out.push(this.refused(job, error))
+      }
+      this.waiting.shift()
+    }
+    for (const [chatId, who] of linksSent) {
+      out.push({ type: 'text', chatId, text: `Roqqu is back. I've just sent the pay links I owed to ${who.join(', ')}. Check your DMs.` })
+    }
+    return out.map(sign)
+  }
+
+  private runWaiting(job: Waiting): Promise<Action[]> {
+    switch (job.kind) {
+      case 'link':
+        return this.payLink(job.chatId, job.member)
+      case 'topup':
+        return this.topupLink(job.member, job.chatId, job.amount).then((url) => [{ type: 'dm', userId: job.member.id, text: `Roqqu is back. ${topupText(job.amount, url)}` }])
+      case 'cashout':
+        return this.sendCashout(job.chatId, job.member, job.amount)
+      case 'spend':
+        return this.sendSpend(job.chatId, job.spend, job.yes)
+    }
+  }
+
+  // Roqqu answered the retry, but with a "no" (e.g. an amount below its minimum).
+  private refused(job: Waiting, error: unknown): Action {
+    const what =
+      job.kind === 'link' ? `${job.member.name}'s pay link`
+      : job.kind === 'topup' ? `${job.member.name}'s ${naira(job.amount)} top-up link`
+      : job.kind === 'cashout' ? `${job.member.name}'s ${naira(job.amount)} cash-out`
+      : `the ${naira(job.spend.amount)} payment to ${job.spend.to.name}`
+    return { type: 'text', chatId: job.chatId, text: `Roqqu is answering again, but it turned down ${what}: ${(error as Error).message}. No money moved.` }
+  }
+
+  // The wallet page's top-up button while Roqqu is down: keep it and DM the link later.
+  topupLater(member: Member, chatId: string, amount: number) {
+    this.waiting.push({ kind: 'topup', chatId, member, amount })
   }
 
   // Who a /join link is for, so the wallet page can greet them by name.
@@ -429,6 +499,8 @@ export class Kolo {
     const members = msg.members.length ? msg.members : [msg.sender]
     const collection: Collection = { title: title || 'Group dues', amount, organiser: msg.sender, members, paid: new Map(), links: new Map() }
     this.collections.set(msg.chatId, collection)
+    // Links still waiting for an older collection here are replaced by this one's.
+    this.waiting = this.waiting.filter((w) => !(w.kind === 'link' && w.chatId === msg.chatId))
     if (!this.payments) {
       return [this.duesCard(msg.chatId, collection, `New collection: ${collection.title}\n${naira(amount)} each · reply "paid" when done\n(Test mode: "paid" is trusted.)`)]
     }
@@ -444,29 +516,45 @@ export class Kolo {
     const account = this.groupAccounts.get(msg.chatId)
 
     // One personal pay link per member, so each payment says exactly who paid.
-    const made = await Promise.allSettled(
-      members.map(async (member) => {
-        const { reference, url } = await this.payments!.link({ chatId: msg.chatId, member, amount, title: collection.title })
-        this.references.set(reference, { chatId: msg.chatId, memberId: member.id })
-        collection.links.set(member.id, url)
-        return { member, url }
-      }),
-    )
-    const links = made.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []))
-    for (const r of made) if (r.status === 'rejected') console.error('pay link failed:', r.reason)
-    const missing = members.filter((m) => !collection.links.has(m.id))
+    const made = await Promise.allSettled(members.map((member) => this.payLink(msg.chatId, member)))
+    const dms = made.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+    const failed = made.flatMap((r, i) => (r.status === 'rejected' ? [{ member: members[i], reason: r.reason }] : []))
+    for (const f of failed) console.error('pay link failed:', f.reason)
+    // Roqqu not answering: keep those links and send them when it's back.
+    const kept = failed.filter((f) => isDown(f.reason)).map((f) => f.member)
+    for (const member of kept) this.waiting.push({ kind: 'link', chatId: msg.chatId, member })
+    const missing = failed.filter((f) => !isDown(f.reason)).map((f) => f.member)
+    const names = (ms: Member[]) => ms.map((m) => m.name).join(', ')
     return [
       this.duesCard(
         msg.chatId,
         collection,
-        `New collection: ${collection.title}, ${naira(amount)} each.\nI've sent everyone their own pay link in DM. Once Roqqu confirms your payment, I'll tick you here, no screenshots needed.${
+        `New collection: ${collection.title}, ${naira(amount)} each.\n${
+          dms.length ? `I've sent ${failed.length ? 'people' : 'everyone'} their own pay link in DM. Once Roqqu confirms your payment, I'll tick you here, no screenshots needed.` : ''
+        }${
           account ? `\nThe money goes into this group's own account (${account.slice(0, 6)}…${account.slice(-4)}), not a shared pool.` : ''
         }${
-          missing.length ? `\nI couldn't make a link for ${missing.map((m) => m.name).join(', ')} yet. I'll need to try again.` : ''
-        }`,
+          kept.length
+            ? `\n${DOWN} I've saved ${dms.length ? `the links for ${names(kept)}` : "everyone's pay links"} and I'll DM them the moment it's back. Nothing is lost. If you pay ${msg.sender.name} directly meanwhile, they can /confirm you.`
+            : ''
+        }${
+          missing.length ? `\nRoqqu wouldn't make a link for ${names(missing)}. Pay ${msg.sender.name} directly and they can /confirm you.` : ''
+        }`.replace(/\n\n/, '\n'),
       ),
-      ...links.map(({ member, url }): Action => ({ type: 'dm', userId: member.id, text: payLinkText(member, collection, url) })),
+      ...dms,
     ]
+  }
+
+  // One member's personal pay link for the group's running collection, as a DM.
+  // Throws if Roqqu fails (the caller decides whether to keep it for later).
+  private async payLink(chatId: string, member: Member): Promise<Action[]> {
+    const c = this.collections.get(chatId)
+    // The collection may have closed or been paid by hand while the link waited.
+    if (!c || c.paid.has(member.id) || !c.members.some((m) => m.id === member.id)) return []
+    const { reference, url } = await this.payments!.link({ chatId, member, amount: c.amount, title: c.title })
+    this.references.set(reference, { chatId, memberId: member.id })
+    c.links.set(member.id, url)
+    return [{ type: 'dm', userId: member.id, text: payLinkText(member, c, url) }]
   }
 
   private markPaid(msg: Incoming): Action[] {
@@ -480,6 +568,17 @@ export class Kolo {
       return [
         this.text(msg, `${msg.sender.name}, I'll tick you as soon as Roqqu confirms it. I've resent your pay link in DM in case you need it.`),
         { type: 'dm', userId: msg.sender.id, text: payLinkText(msg.sender, collection, link) },
+      ]
+    }
+    if (this.payments) {
+      const waiting = this.waiting.some((w) => w.kind === 'link' && w.chatId === msg.chatId && w.member.id === msg.sender.id)
+      return [
+        this.text(
+          msg,
+          waiting
+            ? `${msg.sender.name}, your pay link is still on its way. ${DOWN} I'll DM it the moment it's back. If you paid ${collection.organiser.name} directly, they can /confirm you.`
+            : `${msg.sender.name}, I don't have a pay link for you on this one. If you paid ${collection.organiser.name} directly, they can /confirm you.`,
+        ),
       ]
     }
     collection.paid.set(msg.sender.id, msg.sender.name)
@@ -519,10 +618,13 @@ export class Kolo {
     if (!c) return [this.text(msg, `No collection is running yet.\nStart one with: ${FEATURES.dues.say}`)]
     const unpaid = this.unpaid(c)
     const paid = [...c.paid.values()]
+    const kept = this.waiting.filter((w) => w.chatId === msg.chatId).length
     return [
       this.text(
         msg,
-        `*${c.title}*, ${naira(c.amount)} each\n${c.paid.size} of ${c.members.length} paid, ${naira(c.paid.size * c.amount)} collected\nPaid: ${paid.join(', ') || 'nobody yet'}\nNot yet: ${unpaid.map((m) => m.name).join(', ') || 'nobody'}\n${this.potText(msg.chatId)}`,
+        `*${c.title}*, ${naira(c.amount)} each\n${c.paid.size} of ${c.members.length} paid, ${naira(c.paid.size * c.amount)} collected\nPaid: ${paid.join(', ') || 'nobody yet'}\nNot yet: ${unpaid.map((m) => m.name).join(', ') || 'nobody'}\n${this.potText(msg.chatId)}${
+          kept ? `\nWaiting on Roqqu: ${kept} request${kept === 1 ? '' : 's'}, sent automatically when it's back.` : ''
+        }`,
       ),
     ]
   }
@@ -613,10 +715,14 @@ export class Kolo {
       const url = await this.topupLink(msg.sender, msg.chatId, amount)
       return [
         this.text(msg, `${msg.sender.name}, I've sent your top-up link in DM.`),
-        { type: 'dm', userId: msg.sender.id, text: `Top up ${naira(amount)} into your Kolo balance: ${url}\nPay with USDT or BTC through Roqqu. I'll message you as soon as it lands.` },
+        { type: 'dm', userId: msg.sender.id, text: topupText(amount, url) },
       ]
     } catch (error) {
       console.error('top-up link failed:', error)
+      if (isDown(error)) {
+        this.topupLater(msg.sender, msg.chatId, amount)
+        return [this.text(msg, `${msg.sender.name}, ${DOWN} I've saved your ${naira(amount)} top-up and I'll DM your link the moment it's back.`)]
+      }
       return [this.text(msg, "I couldn't make a top-up link right now. Try again in a minute.")]
     }
   }
@@ -690,18 +796,29 @@ export class Kolo {
       return [this.text(msg, `Sent ${naira(amount)} to your wallet (test mode, no money moved). Balance: ${naira(balance - amount)}`)]
     }
     try {
-      const { reference, sent } = await this.payments.payout({ chatId: msg.chatId, member: msg.sender, amount, purpose: 'cash-out', address })
-      this.balances.set(msg.sender.id, balance - amount)
-      return [
-        this.text(
-          msg,
-          `Done. ${naira(amount)} (${sent}) is on its way to your wallet ${address.slice(0, 6)}…${address.slice(-4)}.\nRoqqu ref: ${reference}\nKolo balance: ${naira(balance - amount)}`,
-        ),
-      ]
+      return await this.sendCashout(msg.chatId, msg.sender, amount)
     } catch (error) {
       console.error('cash-out failed:', error)
+      if (isDown(error)) {
+        this.waiting.push({ kind: 'cashout', chatId: msg.chatId, member: msg.sender, amount })
+        return [this.text(msg, `${msg.sender.name}, ${DOWN} I've saved your ${naira(amount)} cash-out and I'll send it the moment it's back. Your balance stays ${naira(balance)} until then.`)]
+      }
       return [this.text(msg, `Roqqu couldn't send it: ${(error as Error).message}. Your balance is unchanged.`)]
     }
+  }
+
+  // Throws if Roqqu fails; balance and wallet are checked again, since a kept cash-out runs later.
+  private async sendCashout(chatId: string, member: Member, amount: number): Promise<Action[]> {
+    const say = (text: string): Action[] => [{ type: 'text', chatId, text }]
+    const address = this.wallets.get(member.id)
+    const balance = this.balanceOf(member.id)
+    if (!address) return say(`${member.name}, your ${naira(amount)} cash-out was cancelled: you no longer have a Kolo wallet to send it to.`)
+    if (amount > balance) return say(`${member.name}, your ${naira(amount)} cash-out was cancelled: your Kolo balance is now ${naira(balance)}.`)
+    const { reference, sent } = await this.payments!.payout({ chatId, member, amount, purpose: 'cash-out', address })
+    this.balances.set(member.id, balance - amount)
+    return say(
+      `Done, ${member.name}. ${naira(amount)} (${sent}) is on its way to your wallet ${address.slice(0, 6)}…${address.slice(-4)}.\nRoqqu ref: ${reference}\nKolo balance: ${naira(balance - amount)}`,
+    )
   }
 
   private askWho(msg: Incoming, names: string[]): Action {
@@ -744,15 +861,27 @@ export class Kolo {
       return say(`Approved (${yes} yes). ${naira(spend.amount)} paid to ${spend.to.name} for ${spend.purpose} (test mode, no money moved).\n${this.potText(poll.chatId)}`)
     }
     try {
-      const { reference, sent } = await this.payments.payout({ chatId: poll.chatId, member: spend.to, amount: spend.amount, purpose: spend.purpose })
-      this.pots.set(poll.chatId, pot - spend.amount)
-      return say(
-        `Approved with ${yes} yes votes, so I've paid it.\n*Receipt*\n${naira(spend.amount)} (${sent}) to ${spend.to.name}\nFor: ${spend.purpose}\nAsked by: ${spend.by.name}\nRoqqu ref: ${reference}\n${this.potText(poll.chatId)}`,
-      )
+      return await this.sendSpend(poll.chatId, spend, yes)
     } catch (error) {
       console.error('payout failed:', error)
+      if (isDown(error)) {
+        this.waiting.push({ kind: 'spend', chatId: poll.chatId, spend, yes })
+        return say(`The vote passed (${yes} yes). ${DOWN} I've saved the ${naira(spend.amount)} payment to ${spend.to.name} and I'll send it the moment it's back, with the receipt. The pot stays ${naira(pot)} until then.`)
+      }
       return say(`The vote passed, but Roqqu couldn't send it: ${(error as Error).message}. The pot is unchanged (${naira(pot)}).`)
     }
+  }
+
+  // Throws if Roqqu fails; the pot is checked again, since a kept payment runs later.
+  private async sendSpend(chatId: string, spend: Spend, yes: number): Promise<Action[]> {
+    const say = (text: string): Action[] => [{ type: 'text', chatId, text }]
+    const pot = this.pot(chatId)
+    if (spend.amount > pot) return say(`The ${naira(spend.amount)} payment to ${spend.to.name} was cancelled: the pot only has ${naira(pot)} now.`)
+    const { reference, sent } = await this.payments!.payout({ chatId, member: spend.to, amount: spend.amount, purpose: spend.purpose })
+    this.pots.set(chatId, pot - spend.amount)
+    return say(
+      `Approved with ${yes} yes votes, so I've paid it.\n*Receipt*\n${naira(spend.amount)} (${sent}) to ${spend.to.name}\nFor: ${spend.purpose}\nAsked by: ${spend.by.name}\nRoqqu ref: ${reference}\n${this.potText(chatId)}`,
+    )
   }
 
   private async tallyPoll(pollId: string, tally: Record<string, string[]>): Promise<Action[]> {
