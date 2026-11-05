@@ -69,6 +69,9 @@ type Collection = {
   members: Member[]
   paid: Map<string, string>
   links: Map<string, string> // member id → their pay link
+  // "/dues 2k Handouts to me": payments go straight to the organiser's Kolo balance (their
+  // Kolo ID) instead of the group pot, so a course rep can spend it without a vote. Admins only.
+  toOrganiser?: boolean
 }
 // approvers: for a spend, the admins whose yes is also needed (never the person being paid).
 type Poll = { chatId: string; question: string; needed: number; settled: boolean; spend?: Spend; approvers?: Member[] }
@@ -87,7 +90,8 @@ const tag = (m: Member) => `@${m.id.split('@')[0]}`
 const DEMO_CREDIT = Number(process.env.DEMO_CREDIT ?? 0)
 // kind: a top-up of the member's own balance, or their share of a split (paid back to payeeId).
 // Dues links carry amount + title so a payment that lands after the collection closed still counts.
-type PayRef = { chatId: string; memberId: string; kind?: 'topup' | 'split'; amount?: number; title?: string; name?: string; payeeId?: string; payeeName?: string }
+// organiserId: set on dues links for a "to me" collection, so even a late payment reaches them.
+type PayRef = { chatId: string; memberId: string; kind?: 'topup' | 'split'; amount?: number; title?: string; name?: string; payeeId?: string; payeeName?: string; organiserId?: string }
 const potLine = (pot: number) => `Group pot: ${naira(pot)}`
 const payLinkText =(m: Member, c: Collection, url: string) =>
   `Hi ${m.name}! Your share of *${c.title}* is ${naira(c.amount)}.\nPay here (USDT or BTC, via Roqqu): ${url}\nI'll tick you in the group as soon as it lands.`
@@ -399,7 +403,7 @@ export class Kolo {
     if (balance < c.amount) return { ok: false, reason: `Your Kolo balance is ${naira(balance)}, not enough for ${naira(c.amount)}.` }
     this.balances.set(memberId, balance - c.amount)
     c.paid.set(memberId, member.name)
-    this.credit(chatId, c.amount)
+    this.creditDues(chatId, c, c.amount)
     const done = c.paid.size === c.members.length ? "\nThat's everyone. All paid." : ''
     return { ok: true, actions: [this.duesCard(chatId, c, `${member.name} paid by USSD (no data needed).${done}`)].map(sign) }
   }
@@ -434,16 +438,20 @@ export class Kolo {
     }
     const c = ref && this.collections.get(ref.chatId)
     if (ref && ref.amount && (!c || c.title !== ref.title)) {
-      // That collection was closed or replaced before this payment landed: the money still
-      // belongs to the group, so it goes into the pot.
+      // That collection was closed or replaced before this payment landed: the money still goes
+      // where that collection was going (the organiser of a "to me" collection, else the pot).
       this.references.delete(reference)
+      if (ref.organiserId) {
+        this.balances.set(ref.organiserId, this.balanceOf(ref.organiserId) + ref.amount)
+        return [{ type: 'text' as const, chatId: ref.chatId, text: `A late payment of ${naira(ref.amount)} for *${ref.title}* (already closed) just landed. It went to the organiser's Kolo balance, like the rest of that collection.` }].map(sign)
+      }
       this.credit(ref.chatId, ref.amount)
       return [{ type: 'text' as const, chatId: ref.chatId, text: `A late payment of ${naira(ref.amount)} for *${ref.title}* (already closed) just landed. I've added it to the pot.\n${this.potText(ref.chatId)}` }].map(sign)
     }
     const member = c?.members.find((m) => m.id === ref!.memberId)
     if (!ref || !c || !member || c.paid.has(member.id)) return []
     c.paid.set(member.id, member.name)
-    this.credit(ref.chatId, c.amount)
+    this.creditDues(ref.chatId, c, c.amount)
     const done = c.paid.size === c.members.length ? "\nThat's everyone. All paid." : ''
     return [this.duesCard(ref.chatId, c, `${member.name} has paid. Confirmed by ${via}.${done}`)].map(sign)
   }
@@ -491,6 +499,16 @@ export class Kolo {
   private pot = (chatId: string) => this.pots.get(chatId) ?? 0
   private credit(chatId: string, amount: number) {
     this.pots.set(chatId, this.pot(chatId) + amount)
+  }
+  // A dues payment: into the group pot, or the organiser's Kolo balance for a "to me" collection.
+  private creditDues(chatId: string, c: Collection, amount: number) {
+    if (c.toOrganiser) this.balances.set(c.organiser.id, this.balanceOf(c.organiser.id) + amount)
+    else this.credit(chatId, amount)
+  }
+  // Where a collection's money goes, for the dues card.
+  private duesDestination(c: Collection) {
+    const id = this.koloIds.get(c.organiser.id)
+    return c.toOrganiser ? `${c.organiser.name}'s Kolo balance${id ? ` (@${id})` : ''}` : 'the group pot'
   }
 
   private async respond(msg: Incoming, heard: { language?: string; personal?: boolean }): Promise<Action[]> {
@@ -668,13 +686,21 @@ export class Kolo {
     if (open && open.paid.size < open.members.length) {
       return [this.text(msg, `*${open.title}* is still open (${open.paid.size} of ${open.members.length} paid). ${open.organiser.name} can close it with /close first, so nobody's payment gets lost.`)]
     }
+    // "… to me": collect into the organiser's own Kolo balance. Only a group admin (the course
+    // rep) can, since the money then isn't guarded by a group vote.
+    const toMe = /(^|\s)to me$/i.test(title.trim())
+    title = title.trim().replace(/(^|\s)to me$/i, '').trim()
+    if (toMe && !(msg.admins ?? []).includes(msg.sender.id)) {
+      return [this.text(msg, `Only a group admin can collect straight into their own Kolo balance. Send /dues ${amount} ${title || '[what it is for]'} and it goes into the group pot, where the group votes on spending it.`)]
+    }
     const members = msg.members.length ? msg.members : [msg.sender]
-    const collection: Collection = { title: title || 'Group dues', amount, organiser: msg.sender, members, paid: new Map(), links: new Map() }
+    const collection: Collection = { title: title || 'Group dues', amount, organiser: msg.sender, members, paid: new Map(), links: new Map(), ...(toMe && { toOrganiser: true }) }
+    const goesTo = toMe ? `\nIt goes straight to ${this.duesDestination(collection)}, so they can spend it without a vote. Everyone can still see who paid.` : ''
     this.collections.set(msg.chatId, collection)
     // Links still waiting for an older collection here are replaced by this one's.
     this.waiting = this.waiting.filter((w) => !(w.kind === 'link' && w.chatId === msg.chatId))
     if (!this.payments) {
-      return [this.duesCard(msg.chatId, collection, `New collection: ${collection.title}\n${naira(amount)} each · reply "paid" when done\n(Test mode: "paid" is trusted.)`)]
+      return [this.duesCard(msg.chatId, collection, `New collection: ${collection.title}\n${naira(amount)} each · reply "paid" when done${goesTo}\n(Test mode: "paid" is trusted.)`)]
     }
 
     // The group's own account under Kolo's Roqqu parent account (made once).
@@ -704,7 +730,7 @@ export class Kolo {
         `New collection: ${collection.title}, ${naira(amount)} each.\n${
           dms.length ? `I've sent ${failed.length ? 'people' : 'everyone'} their own pay link in DM. Once Roqqu confirms your payment, I'll tick you here, no screenshots needed.` : ''
         }${
-          account ? `\nThe money goes into this group's own account (${account.slice(0, 6)}…${account.slice(-4)}), not a shared pool.` : ''
+          goesTo || (account ? `\nThe money goes into this group's own account (${account.slice(0, 6)}…${account.slice(-4)}), not a shared pool.` : '')
         }${
           kept.length
             ? `\n${DOWN} I've saved ${dms.length ? `the links for ${names(kept)}` : "everyone's pay links"} and I'll DM them the moment it's back. Nothing is lost. If you pay ${msg.sender.name} directly meanwhile, they can /confirm you.`
@@ -724,7 +750,7 @@ export class Kolo {
     // The collection may have closed or been paid by hand while the link waited.
     if (!c || c.paid.has(member.id) || !c.members.some((m) => m.id === member.id)) return []
     const { reference, url } = await this.payments!.link({ chatId, member, amount: c.amount, title: c.title })
-    this.references.set(reference, { chatId, memberId: member.id, amount: c.amount, title: c.title })
+    this.references.set(reference, { chatId, memberId: member.id, amount: c.amount, title: c.title, ...(c.toOrganiser && { organiserId: c.organiser.id }) })
     c.links.set(member.id, url)
     return [{ type: 'dm', userId: member.id, text: payLinkText(member, c, url) }]
   }
@@ -754,7 +780,7 @@ export class Kolo {
       ]
     }
     collection.paid.set(msg.sender.id, msg.sender.name)
-    this.credit(msg.chatId, collection.amount)
+    this.creditDues(msg.chatId, collection, collection.amount)
     return [this.duesCard(msg.chatId, collection, `${msg.sender.name} has paid.`)]
   }
 
@@ -783,8 +809,8 @@ export class Kolo {
       this.text(
         msg,
         `Closed *${c.title}*: ${c.paid.size} of ${c.members.length} paid, ${naira(c.paid.size * c.amount)} collected.${
-          unpaid.length ? `\nDidn't pay: ${unpaid.map((m) => m.name).join(', ')}. If their payment lands later, it still goes into the pot.` : ''
-        }\n${this.potText(msg.chatId)}`,
+          unpaid.length ? `\nDidn't pay: ${unpaid.map((m) => m.name).join(', ')}. If their payment lands later, it still goes to ${this.duesDestination(c)}.` : ''
+        }\n${c.toOrganiser ? `It all went to ${this.duesDestination(c)}.` : this.potText(msg.chatId)}`,
       ),
     ]
   }
@@ -797,7 +823,8 @@ export class Kolo {
     const who = msg.mentions.filter((m) => c.members.some((x) => x.id === m.id) && !c.paid.has(m.id))
     if (!who.length) return [this.text(msg, 'Tag who paid you directly, like: /confirm @Excel')]
     for (const m of who) c.paid.set(m.id, c.members.find((x) => x.id === m.id)!.name)
-    this.credit(msg.chatId, c.amount * who.length)
+    // Paid the organiser by hand: for a "to me" collection they already have it.
+    if (!c.toOrganiser) this.credit(msg.chatId, c.amount * who.length)
     return [this.duesCard(msg.chatId, c, `${who.map((m) => c.paid.get(m.id)).join(', ')} paid ${c.organiser.name} directly. Marked as paid.`)]
   }
 
@@ -1223,9 +1250,9 @@ export const FEATURES = {
   dues: {
     icon: '💰',
     name: 'Collect dues',
-    say: '/dues [amount] [what it is for]',
+    say: '/dues [amount] [what it is for], add "to me" to collect into your own Kolo ID (admins)',
     short: 'Everyone pays the same amount. I DM each person a pay link and tick them as payments land.',
-    long: 'Use it when everybody in the group owes the same amount, like class dues or a contribution. I DM each person their own Roqqu pay link, tick them on the group card the moment Roqqu confirms the money, and keep the list so nobody has to check screenshots or chase anyone.',
+    long: 'Use it when everybody in the group owes the same amount, like class dues or a contribution. I DM each person their own Roqqu pay link, tick them on the group card the moment Roqqu confirms the money, and keep the list so nobody has to check screenshots or chase anyone. The money goes into the group pot, which the group votes to spend. A group admin, like the course rep, can end it with "to me" (/dues 2k Handouts to me) so it goes straight to their own Kolo balance and they can spend it without a vote. Everyone still sees who paid.',
   },
   paid: {
     icon: '✅',

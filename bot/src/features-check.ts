@@ -156,6 +156,24 @@ expect(guarded.potOf(group) === potBefore - 1000, "with the admin's yes, the pot
 out = await guarded.handle(asAdminGroup(excel, '/spend 1k @Koda snacks', [ike]))
 expect(!words(out).includes('including a group admin'), "the admin being paid can't approve their own payment", words(out))
 
+// "to me" collections: a group admin (the course rep) collects into their own Kolo balance.
+const repGroup = new Kolo(undefined, payments)
+repGroup.restore(JSON.parse(JSON.stringify(kolo.snapshot())))
+await repGroup.handle(asAdminGroup(ike, '/close'))
+out = await repGroup.handle(asAdminGroup(excel, '/dues 1k Handouts to me'))
+expect(words(out).includes('Only a group admin'), 'only an admin can collect to themselves', words(out))
+const potBeforeRep = repGroup.potOf(group)
+const kodaBeforeRep = repGroup.balanceOf(ike.id)
+out = await repGroup.handle(asAdminGroup(ike, '/dues 1k Handouts to me'))
+expect(words(out).includes("straight to Koda's Kolo balance (@kodaa)"), 'the card says the money goes to the rep', words(out))
+const repLink = [...(repGroup as any).references].find(([, r]: any) => r.title === 'Handouts' && r.memberId === excel.id)[0]
+repGroup.confirmPayment(repLink)
+expect(repGroup.balanceOf(ike.id) === kodaBeforeRep + 1000 && repGroup.potOf(group) === potBeforeRep, "Excel's ₦1,000 lands in Koda's balance, not the pot")
+out = await repGroup.handle(asAdminGroup(ike, '/close'))
+const lateLink = [...(repGroup as any).references].find(([, r]: any) => r.title === 'Handouts' && r.memberId === clinton.id)[0]
+repGroup.confirmPayment(lateLink)
+expect(repGroup.balanceOf(ike.id) === kodaBeforeRep + 2000 && repGroup.potOf(group) === potBeforeRep, 'a late payment after /close still goes to the rep')
+
 // A wallet made before the wallet service kept records: /join sets up a new one, keeping balance and ID.
 const oldWallets = new Kolo(undefined, payments, {
   usage: async () => { throw new Error('no Kolo wallet with that address') },

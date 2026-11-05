@@ -312,7 +312,8 @@ ${LOGO_SPRITE}
   </div>
   <div class="table" style="margin-top:28px"><table>
     <tr><th>Type this</th><th>What happens</th></tr>
-    <tr><td><code>/dues 2k Class dues</code></td><td>Everyone gets a private pay link, and a progress card appears.</td></tr>
+    <tr><td><code>/dues 2k Class dues</code></td><td>Everyone gets a private pay link, and a progress card appears. The money goes into the group pot.</td></tr>
+    <tr><td><code>/dues 2k Handouts to me</code></td><td>For the course rep (a group admin): the money goes straight to their own Kolo ID, so they can spend it without a vote.</td></tr>
     <tr><td><code>/status</code> · <code>/remind</code></td><td>See who has paid, and nudge the rest.</td></tr>
     <tr><td><code>/split 9k me @Ada @Tobi</code></td><td>Share a bill; everyone pays their part.</td></tr>
     <tr><td><code>/spend 3k @Ada projector</code></td><td>The group votes; if yes wins, Kolo pays and posts a receipt.</td></tr>

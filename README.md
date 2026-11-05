@@ -9,6 +9,7 @@ Collecting dues today means dozens of bank transfers, screenshots, a list in som
 - **Split bills, remind people, check who has paid, and vote** on how the pot is spent, in plain English or Pidgin.
 - **No data? Dial USSD.** Pay your dues from any phone with a PIN, and the WhatsApp group sees it instantly.
 - Money sits in a **group pot**, never in someone's personal account, and leaves only when the **group votes yes**, with a receipt. The yes votes must include one of the **WhatsApp group's admins** (not the person being paid), so a few friends can't vote the pot to themselves.
+- **Course rep collections:** a group admin can end a collection with "to me" (`/dues 2k Handouts to me`), and the money goes straight to their own Kolo balance (their Kolo ID) so they can spend it without a vote. Everyone still sees who paid; non-admins can't do this.
 - `/join` sets up each member's own **passkey wallet** (fingerprint or face, no seed phrase) with a daily spending limit. Even Kolo can't move more than you allow, and `/cashout` sends your money there through Roqqu.
 - Every member gets a **Kolo ID**: their Roqqu username, like `@koda`. Anyone on Kolo can pay them with `/send @koda 2k`, even from another group, with no long wallet address.
 
