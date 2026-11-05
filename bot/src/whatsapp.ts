@@ -561,6 +561,7 @@ async function start() {
       if (a.type === 'text') sent = await sock.sendMessage(a.chatId, { text: a.text, mentions: a.mentions }, quote)
       if (a.type === 'image') sent = await sock.sendMessage(a.chatId, { image: a.png, caption: a.caption }, quote)
       if (a.type === 'dm') sent = await sock.sendMessage(a.userId, { text: a.text })
+      if (a.type === 'react' && origin) await sock.sendMessage(a.chatId, { react: { text: a.emoji, key: origin.key } })
       if (a.type === 'poll') {
         sent = await sock.sendMessage(a.chatId, { poll: { name: a.question, values: a.options, selectableCount: 1 } })
         if (sent?.key.id && sent.message) polls.set(sent.key.id, { pollId: a.pollId, message: sent.message, options: a.options, votes: new Map() })
@@ -572,6 +573,23 @@ async function start() {
       }
     }
     if (actions.length) saveState()
+  }
+
+  // A private chat's sender as a member of one of Kolo's groups: their group id for them
+  // (a LID or phone id) and that group. WhatsApp may give the chat as either form.
+  function groupMemberFor(msg: WAMessage): { id: string; groupId: string } | undefined {
+    const key = msg.key as typeof msg.key & { remoteJidAlt?: string; senderPn?: string }
+    const jids = [key.remoteJid, key.remoteJidAlt, key.senderPn].filter(Boolean).map((j) => jidNormalizedUser(j!))
+    for (const groupId of allowedIds) {
+      const ids = groupMembers.get(groupId) ?? []
+      const direct = jids.find((j) => ids.includes(j))
+      if (direct) return { id: direct, groupId }
+      for (const j of jids) {
+        const byPhone = j.endsWith('@s.whatsapp.net') ? memberIdByPhone.get(phoneDigits(j.split('@')[0])) : undefined
+        if (byPhone && ids.includes(byPhone)) return { id: byPhone, groupId }
+      }
+    }
+    return undefined
   }
 
   // A swipe-reply to one of Kolo's messages, even without the word "kolo".
@@ -597,7 +615,11 @@ async function start() {
       // Messages typed on the account's own phone can arrive as 'append' rather than 'notify'.
       if (type !== 'notify' && !missedRecently && !(msg.key.fromMe && process.env.TEST_OWN_MESSAGES)) continue
       try {
-        if (!msg.message || !allowedIds.has(msg.key.remoteJid ?? '')) continue
+        if (!msg.message) continue
+        // Private chats are answered only for members of a Kolo group (for personal things:
+        // balance, top-ups, your wallet). Never for messages sent from Kolo's own phone.
+        const privateFrom = !isJidGroup(msg.key.remoteJid ?? '') && !msg.key.fromMe ? groupMemberFor(msg) : undefined
+        if (!allowedIds.has(msg.key.remoteJid ?? '') && !privateFrom) continue
         const content = normalizeMessageContent(msg.message)
         // Skip Kolo's own replies. On a shared test account, messages typed on the
         // phone are also fromMe; with TEST_OWN_MESSAGES=1 those are handled too.
@@ -612,7 +634,8 @@ async function start() {
         const chatId = msg.key.remoteJid!
         const group = !!isJidGroup(chatId)
         const mentioned = content?.extendedTextMessage?.contextInfo?.mentionedJid ?? []
-        const senderId = group ? (msg.key.participant ?? jidNormalizedUser(sock.user!.id)) : chatId
+        // In a private chat, use the id the group knows them by, so balances and wallets match.
+        const senderId = group ? (msg.key.participant ?? jidNormalizedUser(sock.user!.id)) : privateFrom!.id
         const senderName = msg.pushName ?? (msg.key.fromMe ? sock.user?.name : undefined)
         if (senderName) names.set(senderId, senderName)
         console.log(`${group ? 'group' : 'dm'} ${nameOf(senderId)}: ${text}`)
@@ -625,6 +648,7 @@ async function start() {
           mentionsBot: mentioned.some(isMe),
           mentions: mentioned.filter((j) => !isMe(j)).map((id) => ({ id, name: nameOf(id) })),
           replyTo: replyToKolo(content),
+          groupId: privateFrom?.groupId,
         }
         // Show "typing…" while the AI reads the message (it can take a few seconds).
         if (isAddressed(incoming)) await sock.sendPresenceUpdate('composing', chatId)

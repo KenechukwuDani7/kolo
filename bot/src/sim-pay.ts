@@ -47,15 +47,16 @@ export function checkoutPage(reference: string, balance?: number): string | unde
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kolo Test Checkout</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@700;800&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
   :root { --ink:#2a1418; --muted:#7a5a60; --bg:#fff7f8; --card:#fff; --line:#f3d5da; --pink:#e8506a; --ok:#1f8a4c; --bad:#c0392b; color-scheme: light; }
   * { box-sizing:border-box }
-  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui, "Segoe UI", sans-serif; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:500 16px/1.5 "Plus Jakarta Sans", system-ui, sans-serif; }
   main { max-width:420px; margin:0 auto; padding:24px 16px; }
   .tag { display:inline-block; font-size:12px; font-weight:600; color:var(--pink); background:#fde8ec; padding:3px 10px; border-radius:99px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:20px; padding:22px; margin-top:14px; box-shadow:0 10px 30px -18px rgba(232,80,106,.45); }
-  h1 { font-size:20px; margin:10px 0 2px; }
-  .amount { font-size:38px; font-weight:750; letter-spacing:-.02em; margin:6px 0; }
+  h1 { font:800 22px "Bricolage Grotesque", system-ui, sans-serif; margin:10px 0 2px; }
+  .amount { font:800 40px "Bricolage Grotesque", system-ui, sans-serif; letter-spacing:-.02em; margin:6px 0; }
   .muted { color:var(--muted); font-size:14px; }
   button { width:100%; border:0; border-radius:14px; padding:14px; font:inherit; font-weight:650; margin-top:10px; cursor:pointer; }
   .ok { background:var(--pink); color:#fff; } .half { background:#fde8ec; color:var(--ink); } .no { background:#f4f1f2; color:var(--muted); }

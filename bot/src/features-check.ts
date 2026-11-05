@@ -105,6 +105,21 @@ expect(summary.dues?.title === 'Water' && summary.dues.youOwe, 'the menu shows t
 await kolo.handle(say(excel, '/app'))
 expect(!kolo.appSession(token), 'asking again replaces the old link')
 
+// Personal requests are answered privately: nothing in the group but a 👍.
+out = await kolo.handle(say(excel, '/balance'))
+expect(!out.some((a) => (a.type === 'text' || a.type === 'image') && a.chatId === group) && out.some((a) => a.type === 'dm' && a.userId === excel.id) && out.some((a) => a.type === 'react'), '/balance in the group replies in DM with a 👍', JSON.stringify(out))
+out = await kolo.handle(say(excel, '/topup 2000000'))
+expect(words(out).includes('₦200,000'), 'a ₦2,000,000 top-up is refused', words(out))
+// A private chat with Kolo: personal things work, group things point back to the group.
+const dmChat = 'excel-dm@lid'
+const inDm = (text: string): Incoming => ({ chatId: dmChat, isGroup: false, sender: excel, members: [], text, mentions: [], mentionsBot: false, groupId: group })
+out = await kolo.handle(inDm('/balance'))
+expect(out.length === 1 && out[0].type === 'text' && out[0].chatId === dmChat && words(out).includes('balance'), '/balance works in a private chat', words(out))
+out = await kolo.handle(inDm('/dues 2k'))
+expect(words(out).includes('in your group'), '/dues in a private chat points back to the group', words(out))
+out = await kolo.handle(inDm('/app'))
+expect(/\/app\/[a-f0-9]{32}/.test(words(out)), '/app in a private chat gives a menu link for their group', words(out))
+
 // State survives a restart (snapshot → restore).
 const restored = new Kolo(undefined, payments)
 restored.restore(JSON.parse(JSON.stringify(kolo.snapshot())))

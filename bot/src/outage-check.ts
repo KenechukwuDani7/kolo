@@ -34,6 +34,7 @@ const show = (label: string, actions: Action[]) => {
   console.log(`\n── ${label}`)
   for (const a of actions) {
     const where = a.type === 'dm' ? `DM ${a.userId}` : a.type
+    if (a.type === 'react') continue
     const text = a.type === 'image' ? a.caption : a.type === 'poll' ? a.question : a.text
     console.log(`[${where}] ${text.replace(/^🐷 \*Kolo\*\n/, '')}`)
   }

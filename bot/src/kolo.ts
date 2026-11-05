@@ -22,6 +22,8 @@ export type Incoming = {
   mentionsBot: boolean
   // Set when the message is a reply to one of Kolo's own messages.
   replyTo?: { kolo: string; asked?: string }
+  // In a private chat with Kolo: the Kolo group the sender belongs to.
+  groupId?: string
 }
 
 export type Action =
@@ -29,6 +31,8 @@ export type Action =
   | { type: 'image'; chatId: string; png: Buffer; caption: string; reply?: boolean }
   | { type: 'poll'; chatId: string; pollId: string; question: string; options: string[] }
   | { type: 'dm'; userId: string; text: string }
+  // A quiet reaction on the message being answered (a personal request answered in DM).
+  | { type: 'react'; chatId: string; emoji: string }
 
 export type Reader = (text: string, ctx: IntentContext) => Promise<Intent>
 // Puts Kolo's replies into another language (same number of texts back, same order).
@@ -377,10 +381,15 @@ export class Kolo {
 
   // Everything Kolo posts back into the same chat is sent as a reply to the message that triggered it.
   async handle(msg: Incoming): Promise<Action[]> {
-    const heard: { language?: string } = {}
-    const actions = (await this.respond(msg, heard)).map((a) =>
-      (a.type === 'text' || a.type === 'image') && a.chatId === msg.chatId ? { ...a, reply: true } : a,
-    )
+    const heard: { language?: string; personal?: boolean } = {}
+    let actions = await this.respond(msg, heard)
+    // Personal things (your balance, top-ups, your wallet) are answered privately, never in
+    // the group: the reply goes to your DM and your message just gets a 👍.
+    if (heard.personal && msg.isGroup) {
+      actions = actions.map((a): Action => (a.type === 'text' && a.chatId === msg.chatId ? { type: 'dm', userId: msg.sender.id, text: a.text } : a))
+      actions.push({ type: 'react', chatId: msg.chatId, emoji: '👍' })
+    }
+    actions = actions.map((a) => ((a.type === 'text' || a.type === 'image') && a.chatId === msg.chatId ? { ...a, reply: true } : a))
     return (await this.inLanguage(actions, msg, heard.language)).map(sign)
   }
 
@@ -415,22 +424,30 @@ export class Kolo {
     this.pots.set(chatId, this.pot(chatId) + amount)
   }
 
-  private async respond(msg: Incoming, heard: { language?: string }): Promise<Action[]> {
+  private async respond(msg: Incoming, heard: { language?: string; personal?: boolean }): Promise<Action[]> {
     if (!isAddressed(msg)) return [] // in groups Kolo ignores ordinary chat
     const text = msg.text.trim()
-    if (/^paid\b/i.test(text)) return this.markPaid(msg)
-    if (text.startsWith('/')) return this.command(msg, text.slice(1))
+    // Group things asked in a private chat point back to the group; personal ones are marked
+    // so handle() answers them privately.
+    const route = (verb: string, run: () => Action[] | Promise<Action[]>) => {
+      if (!msg.isGroup && GROUP_ONLY.has(verb)) return [this.text(msg, "That one happens in your group, so everyone sees it. Send it there and I'll do it.")]
+      heard.personal = PERSONAL.has(verb)
+      return run()
+    }
+    const verbOf = (command: string) => command.trim().split(/\s+/)[0]?.toLowerCase() ?? ''
+    if (/^paid\b/i.test(text)) return route('paid', () => this.markPaid(msg))
+    if (text.startsWith('/')) return route(verbOf(text.slice(1)), () => this.command(msg, text.slice(1)))
 
     const body = stripMention(text)
     if (!body) return [this.text(msg, HELP)]
-    if (!this.read) return this.command(msg, body)
+    if (!this.read) return route(verbOf(body), () => this.command(msg, body))
     try {
       const intent = await this.read(body, this.context(msg))
       heard.language = intent.language
-      return this.fromIntent(msg, intent)
+      return route(intent.action === 'pay' ? 'send' : intent.action, () => this.fromIntent(msg, intent))
     } catch (error) {
       console.error('AI reader failed, falling back to commands:', error)
-      return this.command(msg, body)
+      return route(verbOf(body), () => this.command(msg, body))
     }
   }
 
@@ -663,14 +680,14 @@ export class Kolo {
 
   // "/app": DM a private link to Kolo's web menu, where everything here works with taps.
   private appLink(msg: Incoming): Action[] {
-    if (!msg.isGroup) return [this.text(msg, 'Type /app in your group, so I know which group the menu is for.')]
+    const chatId = msg.isGroup ? msg.chatId : msg.groupId
+    if (!chatId) return [this.text(msg, 'Type /app in your group, so I know which group the menu is for.')]
     for (const [t, s] of this.appTokens) if (s.member.id === msg.sender.id || s.expires < Date.now()) this.appTokens.delete(t)
     const token = crypto.randomUUID().replace(/-/g, '')
-    this.appTokens.set(token, { chatId: msg.chatId, member: msg.sender, expires: Date.now() + 30 * 60_000 })
+    this.appTokens.set(token, { chatId, member: msg.sender, expires: Date.now() + 30 * 60_000 })
     const base = (process.env.KOLO_URL ?? `http://localhost:${process.env.QR_PORT ?? 3117}`).replace(/\/$/, '')
     return [
       { type: 'dm', userId: msg.sender.id, text: `Your Kolo menu: ${base}/app/${token}\nPay dues, top up, send, split and more with a tap. The link is only for you and works for 30 minutes. Don't share it.` },
-      this.text(msg, `${msg.sender.name}, I've sent you your private menu link in DM.`),
     ]
   }
 
@@ -829,7 +846,6 @@ export class Kolo {
         userId: msg.sender.id,
         text: `Hi ${msg.sender.name}! Tap to set up your own Kolo wallet with your fingerprint or face (about 20 seconds): ${joinUrl()}/?t=${token}\nNo password, no seed phrase. Only your device can approve big payments.`,
       },
-      this.text(msg, `${msg.sender.name}, check your DM. I've sent you a private link.`),
     ]
   }
 
@@ -857,6 +873,7 @@ export class Kolo {
   // "/topup 5k": DM a personal Roqqu pay link; when it's paid, the balance goes up.
   private async topup(msg: Incoming, amount: number | undefined): Promise<Action[]> {
     if (!amount) return [this.text(msg, `How much do you want to add? Say it like: ${FEATURES.topup.say}`)]
+    if (amount < TOPUP_MIN || amount > TOPUP_MAX) return [this.text(msg, `Top-ups are from ${naira(TOPUP_MIN)} to ${naira(TOPUP_MAX)} at a time.`)]
     if (!this.payments) {
       this.balances.set(msg.sender.id, this.balanceOf(msg.sender.id) + amount)
       return [this.text(msg, `Added ${naira(amount)} (test mode, no money moved). Balance: ${naira(this.balanceOf(msg.sender.id))}`)]
@@ -864,7 +881,6 @@ export class Kolo {
     try {
       const url = await this.topupLink(msg.sender, msg.chatId, amount)
       return [
-        this.text(msg, `${msg.sender.name}, I've sent your top-up link in DM.`),
         { type: 'dm', userId: msg.sender.id, text: topupText(amount, url) },
       ]
     } catch (error) {
@@ -1070,9 +1086,18 @@ const offPoint = (name: string) => OFF_POINT[offPointTurn++ % OFF_POINT.length](
 // from a person typing on the same number. It also means no reply starts with
 // "/", "Kolo" or "paid", so Kolo can't trigger itself.
 const LABEL = '🐷 *Kolo*'
+
+// About one person, so answered in their DM (with a 👍 on the group message), never in the group.
+const PERSONAL = new Set(['balance', 'topup', 'cashout', 'limit', 'join', 'app', 'web', 'deleteaccount', 'send'])
+// About the group, so only done in the group.
+const GROUP_ONLY = new Set(['dues', 'paid', 'confirm', 'close', 'split', 'spend', 'pot', 'poll', 'remind', 'status'])
+// Top-ups per request (the wallet page uses ₦1,500 to ₦200,000).
+const TOPUP_MIN = 500
+const TOPUP_MAX = 200_000
 function sign(a: Action): Action {
   if (a.type === 'text' || a.type === 'dm') return { ...a, text: `${LABEL}\n${a.text}` }
   if (a.type === 'image') return { ...a, caption: `${LABEL}\n${a.caption}` }
+  if (a.type === 'react') return a
   return { ...a, question: `Kolo vote: ${a.question}` }
 }
 
