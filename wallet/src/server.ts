@@ -299,6 +299,26 @@ createServer(async (req, res) => {
     }
     return
   }
+  // Test cash-outs: Kolo's test checkout stands in for Roqqu, so the bot pays the naira into
+  // the member's wallet itself. Test chain only, and like revoking, never through the public proxy.
+  if (req.method === 'POST' && req.url === '/internal/credit') {
+    if (req.headers['x-forwarded-for'] || !isLocal) {
+      res.writeHead(403).end()
+      return
+    }
+    try {
+      const { address, naira } = await readBody(req)
+      const amount = Math.round(Number(naira))
+      if (!wallets.has(String(address).toLowerCase())) throw new Error('not a Kolo wallet')
+      if (!(amount > 0 && amount <= 200_000)) throw new Error('amount must be between ₦1 and ₦200,000')
+      const tx = await send({ to: address as Address, value: nairaToWei(amount) })
+      const balance = weiToNaira(await balanceOf(address as Address))
+      res.writeHead(200, { 'content-type': 'application/json' }).end(toJson({ tx: link(tx.hash), balance }))
+    } catch (error: any) {
+      res.writeHead(400, { 'content-type': 'application/json' }).end(toJson({ error: error?.shortMessage ?? String(error?.message ?? error) }))
+    }
+    return
+  }
   const route = routes[req.url ?? '']
   if (req.method === 'POST' && route) {
     try {

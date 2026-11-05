@@ -1056,8 +1056,9 @@ export class Kolo {
     if (amount > balance) return say(`${member.name}, your ${naira(amount)} cash-out was cancelled: your Kolo balance is now ${naira(balance)}.`)
     const { reference, sent } = await this.payments!.payout({ chatId, member, amount, purpose: 'cash-out', address })
     this.balances.set(member.id, balance - amount)
+    const id = this.koloIds.get(member.id)
     return say(
-      `Done, ${member.name}. ${naira(amount)} (${sent}) is on its way to your wallet ${address.slice(0, 6)}…${address.slice(-4)}.\nRoqqu ref: ${reference}\nKolo balance: ${naira(balance - amount)}`,
+      `Done, ${member.name}. ${naira(amount)} is on its way to your wallet${id ? ` (@${id})` : ` ${address.slice(0, 6)}…${address.slice(-4)}`}.\n${sent}\nRoqqu ref: ${reference}\nKolo balance: ${naira(balance - amount)}`,
     )
   }
 

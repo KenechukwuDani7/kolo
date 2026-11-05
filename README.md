@@ -28,7 +28,7 @@ Each member has two separate places for money:
 
 `/cashout 5k` moves money from your Kolo balance to your wallet: Kolo takes ₦5,000 off your balance and Roqqu sends it to your wallet.
 
-**In the hackathon build:** Roqqu's sandbox stopped accepting payment links on 5 November and blocks cloud servers, so the server runs Kolo's own test checkout (`ROQQU_MODE=simulate`). There, `/cashout` takes the money off your Kolo balance and gives a receipt, but no funds reach the wallet. The wallets run on a local Base Sepolia fork. Live, Roqqu would send USDT on BSC, so connecting the two networks is part of going live with Roqqu.
+**In the hackathon build:** Roqqu's sandbox stopped accepting payment links on 5 November and blocks cloud servers, so the server runs Kolo's own test checkout (`ROQQU_MODE=simulate`). There, `/cashout` takes the money off your Kolo balance and pays the same amount into your wallet on the test chain (a local Base Sepolia fork), so the wallet page shows it straight away. Live, Roqqu would send USDT on BSC, so connecting Roqqu's payouts to the wallets' network is part of going live with Roqqu.
 
 ## How it fits together
 

@@ -1,7 +1,8 @@
 // Kolo's own test checkout, standing in for Roqqu's sandbox checkout when Roqqu can't be
 // used (its sandbox stopped accepting payment links, and it blocks cloud servers).
 // Same flow as Roqqu's: a personal link per payer, and a checkout page with
-// Completed / Underpaid / Failed buttons. No money moves; it's labelled as a test.
+// Completed / Underpaid / Failed buttons. It's labelled as a test; the only funds that move
+// are test-chain funds into a member's own wallet when they cash out.
 //   ROQQU_MODE=simulate   (KOLO_URL = this bot's public address, for the links)
 import { FAVICON, LOGO_SPRITE, logo } from './logo.js'
 import type { Member, Payments } from './kolo.js'
@@ -10,7 +11,9 @@ import { nairaPerDollar, notAnswering, outageOn } from './roqqu.js'
 export type SimLink = { naira: number; title: string; memberId: string; name: string; state: 'open' | 'paid' | 'underpaid' | 'failed' }
 export const simLinks = new Map<string, SimLink>()
 
-const koloUrl = () => (process.env.KOLO_URL ?? `http://localhost:${process.env.QR_PORT ?? 3117}`).replace(/\/$/, '')
+// The passkey wallet service (wallet/), which pays test cash-outs into a member's wallet.
+const walletUrl = () => process.env.WALLET_URL ?? 'http://localhost:3116'
+const koloUrl = () =>(process.env.KOLO_URL ?? `http://localhost:${process.env.QR_PORT ?? 3117}`).replace(/\/$/, '')
 const ref = (prefix: string) => `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.toUpperCase()
 
 export const simulatedPayments: Payments = {
@@ -20,11 +23,20 @@ export const simulatedPayments: Payments = {
     simLinks.set(reference, { naira: amount, title, memberId: member.id, name: member.name, state: 'open' })
     return { reference, url: `${koloUrl()}/pay/${reference}` }
   },
-  async payout({ member, amount }: { member: Member; amount: number }) {
+  // A cash-out (with the member's wallet address) really lands in their wallet on the test
+  // chain, so the wallet page shows it. Pot payouts to a member stay a recorded test send.
+  async payout({ member, amount, address }: { member: Member; amount: number; address?: string }) {
     if (outageOn()) throw notAnswering('Roqqu /wallets/send')
     const rate = await nairaPerDollar()
     const usdt = Math.floor((amount / rate) * 100) / 100
     if (usdt < 1) throw new Error(`Roqqu's smallest send is 1 USDT (about ₦${Math.ceil(rate).toLocaleString('en-NG')})`)
+    if (address) {
+      const res = await fetch(`${walletUrl()}/internal/credit`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address, naira: amount }) })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(`the wallet didn't take it: ${json.error ?? res.status}`)
+      console.log(`test cash-out ₦${amount} to ${member.name}'s wallet`)
+      return { reference: ref('SP'), sent: `Test mode: it's already there. Your wallet now holds ₦${Number(json.balance).toLocaleString('en-NG')}.` }
+    }
     console.log(`test payout ${usdt} USDT to ${member.name}`)
     return { reference: ref('SP'), sent: `${usdt} USDT on BSC at ₦${rate.toLocaleString('en-NG')}/$, test mode` }
   },
