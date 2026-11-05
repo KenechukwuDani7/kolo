@@ -2,9 +2,12 @@
 // It posts to /ussd exactly as Africa's Talking would.
 export const USSD_CODE = '*347*565#'
 
+import { FAVICON, LOGO_SPRITE, logo } from './logo.js'
+
 export const USSD_PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kolo USSD</title>
+${FAVICON}
 <style>
   :root { --bg:#eef2ef; --ink:#14201a; --muted:#5b6b62; --phone:#101512; --screen:#f7f9f8; --dialog:#ffffff; --line:#d6dfd9; --accent:#1f8a4c; --accent-ink:#ffffff; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0c120f; --ink:#e6eee9; --muted:#9aaba1; --phone:#000; --screen:#151c18; --dialog:#1d2621; --line:#2c3a32; --accent:#34b36b; --accent-ink:#06130b; } }
@@ -33,9 +36,9 @@ export const USSD_PAGE = `<!doctype html>
   .ghost { background:transparent; color:var(--accent); padding:8px 14px; }
   .send { background:var(--accent); color:var(--accent-ink); padding:8px 18px; }
 </style></head>
-<body><div class="wrap">
+<body>${LOGO_SPRITE}<div class="wrap">
   <div class="intro">
-    <h1>Kolo on USSD 🐷</h1>
+    <h1 style="display:flex;align-items:center;gap:10px">${logo(40)}Kolo on USSD</h1>
     <p>No data, low battery or no smartphone? Dial Kolo like a bank code and still pay your group dues. The WhatsApp group sees it instantly.</p>
     <p>Enter the WhatsApp number you use in the group, dial <code>${USSD_CODE}</code>, and create your own 4-digit PIN the first time you pay.</p>
     <p style="font-size:13px">Prototype: a live shortcode needs a telco or Africa's Talking. This screen talks to Kolo the same way they would.</p>

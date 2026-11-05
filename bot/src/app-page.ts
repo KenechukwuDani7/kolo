@@ -1,9 +1,12 @@
 // Kolo's web menu: everything Kolo does in the group, with taps. Opened from the private
 // link /app DMs (KOLO_URL/app/<token>); the token says who you are and which group.
 // What you do here is posted in the group like normal, so the group always sees it.
+import { FAVICON, LOGO_SPRITE, logo } from './logo.js'
+
 export const APP_PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kolo Menu</title>
+${FAVICON}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Encode+Sans:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -39,8 +42,8 @@ export const APP_PAGE = `<!doctype html>
   .hint { margin-top: 18px; text-align: center; }
   [hidden] { display: none !important; }
 </style></head>
-<body><main>
-  <div class="top"><div class="brand">🐷 Kolo</div><div class="group" id="group"></div></div>
+<body>${LOGO_SPRITE}<main>
+  <div class="top"><div class="brand">${logo(30)}Kolo</div><div class="group" id="group"></div></div>
   <h1 id="hello">Loading…</h1>
   <div class="stats">
     <div class="stat"><div class="label">Your Kolo balance</div><div class="num" id="bal">₦0</div></div>

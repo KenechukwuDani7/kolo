@@ -3,6 +3,7 @@
 // Same flow as Roqqu's: a personal link per payer, and a checkout page with
 // Completed / Underpaid / Failed buttons. No money moves; it's labelled as a test.
 //   ROQQU_MODE=simulate   (KOLO_URL = this bot's public address, for the links)
+import { FAVICON, LOGO_SPRITE, logo } from './logo.js'
 import type { Member, Payments } from './kolo.js'
 import { nairaPerDollar, notAnswering, outageOn } from './roqqu.js'
 
@@ -47,12 +48,14 @@ export function checkoutPage(reference: string, balance?: number): string | unde
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kolo Test Checkout</title>
+${FAVICON}
 <link href="https://fonts.googleapis.com/css2?family=Encode+Sans:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root { --ink:#2a1418; --muted:#7a5a60; --bg:#fff7f8; --card:#fff; --line:#f3d5da; --pink:#e8506a; --ok:#1f8a4c; --bad:#c0392b; color-scheme: light; }
   * { box-sizing:border-box }
   body { margin:0; background:var(--bg); color:var(--ink); font:500 16px/1.5 "Inter", system-ui, sans-serif; }
   main { max-width:420px; margin:0 auto; padding:24px 16px; }
+  .brand { display:flex; align-items:center; gap:8px; font:800 20px "Encode Sans", system-ui, sans-serif; margin-bottom:10px; }
   .tag { display:inline-block; font-size:12px; font-weight:600; color:var(--pink); background:#fde8ec; padding:3px 10px; border-radius:99px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:20px; padding:22px; margin-top:14px; box-shadow:0 10px 30px -18px rgba(232,80,106,.45); }
   h1 { font:800 22px "Encode Sans", system-ui, sans-serif; margin:10px 0 2px; }
@@ -62,7 +65,8 @@ export function checkoutPage(reference: string, balance?: number): string | unde
   .ok { background:var(--pink); color:#fff; } .half { background:#fde8ec; color:var(--ink); } .no { background:#f4f1f2; color:var(--muted); }
   #done { font-weight:600; margin-top:14px; }
 </style></head>
-<body><main>
+<body>${LOGO_SPRITE}<main>
+  <div class="brand">${logo(30)}Kolo</div>
   <span class="tag">Test checkout · no real money</span>
   <div class="card">
     <div class="muted">Kolo payment for ${esc(l.name)}</div>

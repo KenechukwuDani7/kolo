@@ -388,7 +388,13 @@ createServer(async (req, res) => {
   // The wallet page shows the owner's name and Kolo balance: ?address=0x…
   if (req.url?.startsWith('/wallet/balance') && req.method === 'GET') {
     const owner = kolo.ownerOfWallet(new URL(req.url, 'http://x').searchParams.get('address') ?? '')
-    res.writeHead(owner ? 200 : 404, { 'content-type': 'application/json' }).end(JSON.stringify(owner ? { name: owner.name, balance: owner.balance } : {}))
+    res.writeHead(owner ? 200 : 404, { 'content-type': 'application/json' }).end(JSON.stringify(owner ? { name: owner.name, balance: owner.balance, koloId: owner.koloId } : {}))
+    return
+  }
+  // The wallet page sending to a Kolo ID: ?id=koda → that person's wallet address.
+  if (req.url?.startsWith('/wallet/resolve') && req.method === 'GET') {
+    const address = kolo.walletOfKoloId(new URL(req.url, 'http://x').searchParams.get('id') ?? '')
+    res.writeHead(address ? 200 : 404, { 'content-type': 'application/json' }).end(JSON.stringify(address ? { address } : {}))
     return
   }
   // The wallet page's Top up button: { address, amount } → a personal Roqqu pay link.
@@ -418,14 +424,14 @@ createServer(async (req, res) => {
     }
     return
   }
-  // The wallet page reports a finished /join: { token, address, dailyLimit }.
+  // The wallet page reports a finished /join: { token, address, dailyLimit, roqquUsername? }.
   if (req.url === '/wallet/registered' && req.method === 'POST') {
     let body = ''
     for await (const chunk of req) body += chunk
     try {
-      const { token, address, dailyLimit } = JSON.parse(body)
+      const { token, address, dailyLimit, roqquUsername } = JSON.parse(body)
       if (!/^0x[0-9a-fA-F]{40}$/.test(address)) throw new Error('bad address')
-      const actions = kolo.walletReady(String(token), address, String(dailyLimit))
+      const actions = kolo.walletReady(String(token), address, String(dailyLimit), roqquUsername ? String(roqquUsername) : undefined)
       if (!actions.length) throw new Error('unknown or used link')
       await performNow?.(actions)
       saveState()

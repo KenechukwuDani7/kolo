@@ -125,6 +125,8 @@ export class Kolo {
   private wallets = new Map<string, string>()
   // Who owns each wallet (member id → name and the group they joined from).
   private owners = new Map<string, { name: string; chatId: string }>()
+  // Kolo IDs: member id → a short handle ("koda", shown as @koda) used instead of a 0x address.
+  private koloIds = new Map<string, string>()
   // /app links: private token → who may use the Kolo web menu, for which group, until when.
   private appTokens = new Map<string, { chatId: string; member: Member; expires: number }>()
   // Members who asked to delete their account: member id → when the request expires.
@@ -144,6 +146,7 @@ export class Kolo {
       joinTokens: [...this.joinTokens],
       wallets: [...this.wallets],
       owners: [...this.owners],
+      koloIds: [...this.koloIds],
       groupAccounts: [...this.groupAccounts],
       waiting: this.waiting,
       // Open votes, so a spend vote still counts after a restart.
@@ -161,6 +164,7 @@ export class Kolo {
     this.joinTokens = new Map(s.joinTokens ?? [])
     this.wallets = new Map(s.wallets ?? [])
     this.owners = new Map(s.owners ?? [])
+    this.koloIds = new Map(s.koloIds ?? [])
     this.groupAccounts = new Map(s.groupAccounts ?? [])
     this.waiting = s.waiting ?? []
     this.polls = new Map(s.polls ?? [])
@@ -257,20 +261,70 @@ export class Kolo {
   }
 
   // The wallet page finished: passkey created, wallet deployed, daily limit signed.
-  walletReady(token: string, address: string, dailyLimit: string): Action[] {
+  // roqquUsername: what they typed on the page; it becomes their Kolo ID if it's free.
+  walletReady(token: string, address: string, dailyLimit: string, roqquUsername?: string): Action[] {
     const who = this.joinTokens.get(token)
     if (!who) return []
     this.joinTokens.delete(token)
     this.wallets.set(who.memberId, address)
     this.owners.set(who.memberId, { name: who.name, chatId: who.chatId })
-    const short = `${address.slice(0, 6)}…${address.slice(-4)}`
+    const id = this.claimKoloId(who.memberId, roqquUsername, who.name)
+    const asked = cleanKoloId(roqquUsername ?? '')
+    const note = asked && asked !== id ? `\n(@${asked} was already taken, so ${who.name} is @${id}. They can change it with /id [new name].)` : ''
     return [
       {
         type: 'text',
         chatId: who.chatId,
-        text: `${who.name} just set up their own Kolo wallet (${short}). Only their fingerprint or face can control it, and I can't spend more than ${dailyLimit} a day from it. That limit is enforced on the blockchain, not by me.`,
+        text: `${who.name} just set up their own Kolo wallet. Their Kolo ID is *@${id}*: anyone can send them money with /send @${id} [amount].\nOnly their fingerprint or face can control the wallet, and I can't spend more than ${dailyLimit} a day from it. That limit is enforced on the blockchain, not by me.${note}`,
       },
     ].map(sign)
+  }
+
+  // ── Kolo IDs: a short handle in place of a 0x address (their Roqqu username when they give one) ──
+
+  koloIdOf = (memberId: string) => this.koloIds.get(memberId)
+
+  // Their wanted ID if it's valid and free, else one made from their name ("koda27").
+  private claimKoloId(memberId: string, wanted: string | undefined, name: string) {
+    const taken = (id: string) => [...this.koloIds].some(([m, v]) => v === id && m !== memberId)
+    const want = cleanKoloId(wanted ?? '')
+    let id = want.length >= 3 && !taken(want) ? want : ''
+    const base = cleanKoloId(name).replace(/[._]/g, '').slice(0, 12) || 'kolo'
+    for (let digits = 2; !id; digits++) {
+      for (let i = 0; i < 20 && !id; i++) {
+        const tryId = `${base}${Math.floor(10 ** (digits - 1) + Math.random() * 9 * 10 ** (digits - 1))}`
+        if (!taken(tryId)) id = tryId
+      }
+    }
+    this.koloIds.set(memberId, id)
+    return id
+  }
+
+  // Whoever has this Kolo ID (with or without the @).
+  memberByKoloId(id: string): Member | undefined {
+    const k = cleanKoloId(id)
+    const memberId = [...this.koloIds].find(([, v]) => v === k)?.[0]
+    const owner = memberId && this.owners.get(memberId)
+    return owner ? { id: memberId, name: owner.name } : undefined
+  }
+
+  // The wallet behind a Kolo ID, so the wallet page can send to @koda instead of 0x….
+  walletOfKoloId(id: string) {
+    const member = this.memberByKoloId(id)
+    return member && this.wallets.get(member.id)
+  }
+
+  // "/id": show your Kolo ID. "/id koda": change it, if it's free.
+  private koloId(msg: Incoming, wanted: string | undefined): Action[] {
+    if (!this.wallets.has(msg.sender.id)) return [this.text(msg, `You get a Kolo ID when you set up your wallet. Send /join to start.`)]
+    const current = this.koloIds.get(msg.sender.id) ?? this.claimKoloId(msg.sender.id, undefined, msg.sender.name)
+    if (!wanted) return [this.text(msg, `${msg.sender.name}, your Kolo ID is *@${current}*.\nAnyone on Kolo can send you money with /send @${current} [amount], even from another group.`)]
+    const want = cleanKoloId(wanted)
+    if (want.length < 3) return [this.text(msg, 'A Kolo ID needs at least 3 letters or numbers, like /id koda.')]
+    if (want === current) return [this.text(msg, `You're already @${current}.`)]
+    if (this.memberByKoloId(want)) return [this.text(msg, `@${want} is taken. Try another, like /id ${want}${Math.floor(10 + Math.random() * 90)}.`)]
+    this.koloIds.set(msg.sender.id, want)
+    return [this.text(msg, `Done. Your Kolo ID is now *@${want}*.`)]
   }
 
   // ── USSD: the same group money, from any phone with no data ──
@@ -282,7 +336,7 @@ export class Kolo {
   ownerOfWallet(address: string) {
     const memberId = [...this.wallets].find(([, a]) => a.toLowerCase() === address.toLowerCase())?.[0]
     const owner = memberId && this.owners.get(memberId)
-    return owner ? { memberId, ...owner, balance: this.balanceOf(memberId) } : undefined
+    return owner ? { memberId, ...owner, balance: this.balanceOf(memberId), koloId: this.koloIds.get(memberId) } : undefined
   }
 
   // A personal Roqqu pay link that adds money to this member's Kolo balance.
@@ -477,10 +531,21 @@ export class Kolo {
       case 'web':
         return this.appLink(msg)
       case 'send': {
-        // "/send @Excel 2k" (the amount can come before or after the tag)
+        // "/send @Excel 2k" (a WhatsApp tag) or "/send @koda 2k" (a Kolo ID, any group);
+        // the amount can come before or after. WhatsApp tags are @ and digits, IDs start with a letter.
+        // A tag that names someone already tagged is that person; else a Kolo ID; else a group member's name.
         const amount = args.map(parseAmount).find((n) => n !== undefined)
-        return this.pay(msg, amount, msg.mentions, [])
+        const key = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+        const tagged = new Set(msg.mentions.map((m) => key(m.name)))
+        const ids = args.filter((w) => /^@[a-z][a-z0-9._]{2,}$/i.test(w) && !tagged.has(key(w)))
+        const found = ids.map((w) => this.memberByKoloId(w) ?? msg.members.find((m) => key(m.name) === key(w)))
+        const missing = ids.filter((_, i) => !found[i])
+        if (missing.length) return [this.text(msg, `I don't know the Kolo ID ${missing.join(', ')}. Check the spelling, or ask them to send /id to see theirs.`)]
+        return this.pay(msg, amount, [...msg.mentions, ...(found as Member[])], [])
       }
+      case 'id':
+      case 'username':
+        return this.koloId(msg, args[0])
       case 'spend':
         // "/spend 5k @Excel projector"
         return this.startSpend(msg, parseAmount(args[0] ?? ''), msg.mentions, args.slice(1).filter((w) => !w.startsWith('@')).join(' '))
@@ -836,7 +901,10 @@ export class Kolo {
 
   private join(msg: Incoming): Action[] {
     const existing = this.wallets.get(msg.sender.id)
-    if (existing) return [this.text(msg, `${msg.sender.name}, you already have a Kolo wallet (${existing.slice(0, 6)}…${existing.slice(-4)}).`)]
+    if (existing) {
+      const id = this.koloIds.get(msg.sender.id) ?? this.claimKoloId(msg.sender.id, undefined, msg.sender.name)
+      return [this.text(msg, `${msg.sender.name}, you already have a Kolo wallet. Your Kolo ID is @${id}.`)]
+    }
     // A one-time token ties the wallet page back to this person and group.
     const token = crypto.randomUUID().replace(/-/g, '')
     this.joinTokens.set(token, { chatId: msg.chatId, memberId: msg.sender.id, name: msg.sender.name })
@@ -933,6 +1001,7 @@ export class Kolo {
     const id = msg.sender.id
     this.wallets.delete(id)
     this.owners.delete(id)
+    this.koloIds.delete(id)
     this.balances.delete(id)
     for (const [token, who] of this.joinTokens) if (who.memberId === id) this.joinTokens.delete(token)
     for (const [ref, r] of this.references) if (r.memberId === id && r.kind === 'topup') this.references.delete(ref)
@@ -1088,7 +1157,9 @@ const offPoint = (name: string) => OFF_POINT[offPointTurn++ % OFF_POINT.length](
 const LABEL = '🐷 *Kolo*'
 
 // About one person, so answered in their DM (with a 👍 on the group message), never in the group.
-const PERSONAL = new Set(['balance', 'topup', 'cashout', 'limit', 'join', 'app', 'web', 'deleteaccount', 'send'])
+const PERSONAL = new Set(['balance', 'topup', 'cashout', 'limit', 'join', 'app', 'web', 'deleteaccount', 'send', 'id', 'username'])
+// A Kolo ID as stored: lower case letters, digits, dots and underscores, no @, at most 20.
+const cleanKoloId = (s: string) => s.trim().toLowerCase().replace(/^@/, '').replace(/[^a-z0-9._]/g, '').slice(0, 20)
 // About the group, so only done in the group.
 const GROUP_ONLY = new Set(['dues', 'paid', 'confirm', 'close', 'split', 'spend', 'pot', 'poll', 'remind', 'status'])
 // Top-ups per request (the wallet page uses ₦1,500 to ₦200,000).
@@ -1142,9 +1213,16 @@ export const FEATURES = {
   pay: {
     icon: '💸',
     name: 'Pay someone',
-    say: '/send @[name] [amount], or Kolo send [name] [amount]',
-    short: 'Send money from your Kolo balance to someone in the group, instantly.',
-    long: 'Moves money from your Kolo balance to theirs straight away, and DMs them. They can spend it on dues, send it on, or cash it out to their own wallet. Top up first with /topup if your balance is low.',
+    say: '/send @[name or Kolo ID] [amount], or Kolo send [name] [amount]',
+    short: 'Send money from your Kolo balance to someone in the group, or to any Kolo ID, instantly.',
+    long: 'Moves money from your Kolo balance to theirs straight away, and DMs them. Tag someone in the group, or use their Kolo ID (like @koda) to pay anyone on Kolo, even in another group. They can spend it on dues, send it on, or cash it out to their own wallet. Top up first with /topup if your balance is low.',
+  },
+  id: {
+    icon: '🪪',
+    name: 'Your Kolo ID',
+    say: '/id, or /id [new name] to change it',
+    short: 'Your short Kolo ID, like @koda, so people can pay you without a long wallet address.',
+    long: 'Your Kolo ID is your Roqqu username if you gave it when you set up your wallet, or one made from your name. Anyone on Kolo can send you money with /send @[your ID] [amount], even from another group. Change it any time with /id [new name] if the name is free.',
   },
   poll: {
     icon: '🗳️',
@@ -1216,7 +1294,7 @@ ${Object.values(FEATURES)
 Want more on one? Type /help [feature], e.g. /help split`
 
 // "/help split", "/help bill", "/help vote" → the feature they mean
-const ALIASES: Record<string, Feature> = { web: 'app', website: 'app', menu: 'app', delete: 'deleteaccount', leave: 'deleteaccount', fund: 'topup', deposit: 'topup', balance: 'topup', withdrawal: 'cashout', cash: 'cashout', pot: 'spend', treasury: 'spend', withdraw: 'spend', bill: 'split', share: 'split', vote: 'poll', voting: 'poll', account: 'join', wallet: 'join', send: 'pay', collect: 'dues', collection: 'dues', reminder: 'remind', progress: 'status' }
+const ALIASES: Record<string, Feature> = { username: 'id', tag: 'id', handle: 'id', web: 'app', website: 'app', menu: 'app', delete: 'deleteaccount', leave: 'deleteaccount', fund: 'topup', deposit: 'topup', balance: 'topup', withdrawal: 'cashout', cash: 'cashout', pot: 'spend', treasury: 'spend', withdraw: 'spend', bill: 'split', share: 'split', vote: 'poll', voting: 'poll', account: 'join', wallet: 'join', send: 'pay', collect: 'dues', collection: 'dues', reminder: 'remind', progress: 'status' }
 function featureFor(word: string): Feature | undefined {
   const w = word.trim().toLowerCase().replace(/^\//, '').split(/\s+/)[0]
   if (!w) return undefined

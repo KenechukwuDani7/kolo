@@ -120,10 +120,31 @@ expect(words(out).includes('in your group'), '/dues in a private chat points bac
 out = await kolo.handle(inDm('/app'))
 expect(/\/app\/[a-f0-9]{32}/.test(words(out)), '/app in a private chat gives a menu link for their group', words(out))
 
+// Kolo IDs: the Roqqu username typed at sign-up becomes the ID; a taken one falls back to the name.
+kolo.handle(say(ike, '/join'))
+let joinToken = [...(kolo as any).joinTokens].find(([, w]: any) => w.memberId === ike.id)[0]
+out = kolo.walletReady(joinToken, '0x' + '1'.repeat(40), '₦10,000', '@Koda')
+expect(kolo.koloIdOf(ike.id) === 'koda' && words(out).includes('@koda'), "Koda's Roqqu username becomes the Kolo ID @koda", words(out))
+kolo.handle(say(clinton, '/join'))
+joinToken = [...(kolo as any).joinTokens].find(([, w]: any) => w.memberId === clinton.id)[0]
+out = kolo.walletReady(joinToken, '0x' + '2'.repeat(40), '₦10,000', 'koda')
+expect(/^clinton\d+$/.test(kolo.koloIdOf(clinton.id) ?? '') && words(out).includes('already taken'), 'a taken username gets an ID from the name instead', words(out))
+const outsider: Member = { id: 'other@s', name: 'Ada' }
+out = await kolo.handle({ chatId: 'other@g.us', isGroup: true, sender: outsider, members: [outsider], text: '/send @koda 500', mentions: [], mentionsBot: false })
+expect(words(out).includes('not enough'), 'someone in another group can find @koda (and needs a balance to pay)', words(out))
+;(kolo as any).balances.set(outsider.id, 1000)
+const kodaBefore = kolo.balanceOf(ike.id)
+out = await kolo.handle({ chatId: 'other@g.us', isGroup: true, sender: outsider, members: [outsider], text: '/send @koda 500', mentions: [], mentionsBot: false })
+expect(kolo.balanceOf(ike.id) === kodaBefore + 500, '/send @koda 500 pays Koda from another group', words(out))
+out = await kolo.handle(say(ike, '/send @nobody99 500'))
+expect(words(out).includes("don't know the Kolo ID"), 'an unknown Kolo ID is refused', words(out))
+out = await kolo.handle(say(ike, '/id kodaa'))
+expect(kolo.koloIdOf(ike.id) === 'kodaa' && kolo.walletOfKoloId('@kodaa') === '0x' + '1'.repeat(40), '/id kodaa changes the ID, and the wallet page can find it', words(out))
+
 // State survives a restart (snapshot → restore).
 const restored = new Kolo(undefined, payments)
 restored.restore(JSON.parse(JSON.stringify(kolo.snapshot())))
-expect(restored.checkPin(ike.id, '4821') && restored.balanceOf(clinton.id) === 3000, 'PINs and balances survive a restart')
+expect(restored.checkPin(ike.id, '4821') && restored.balanceOf(clinton.id) === 3000 && restored.koloIdOf(ike.id) === 'kodaa', 'PINs, balances and Kolo IDs survive a restart')
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll feature checks passed')
 process.exit(failures ? 1 : 0)

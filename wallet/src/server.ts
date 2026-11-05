@@ -34,8 +34,9 @@ const PORT = Number(process.env.PORT ?? 3000)
 const page = () => readFileSync(new URL('../public/index.html', import.meta.url), 'utf8')
 
 // Sign-ups between "wallet created" and "limit signed", by wallet address, so several
-// people can join at once. token: the /join link from their WhatsApp DM.
-const signups = new Map<string, { token?: string }>()
+// people can join at once. token: the /join link from their WhatsApp DM; username: the
+// Roqqu username they typed, which becomes their Kolo ID.
+const signups = new Map<string, { token?: string; username?: string }>()
 // The demo payment the bot makes from the "You're in" screen.
 const DEMO_PAYMENT_NAIRA = 4_000
 const LIMIT_CHOICES = [5_000, 10_000, 20_000]
@@ -82,13 +83,13 @@ async function usage(address?: string) {
 }
 
 // Tell the WhatsApp bot the wallet is ready; it announces it in the group.
-async function tellKolo(address: Address, token: string | undefined, limitNaira: number) {
+async function tellKolo(address: Address, token: string | undefined, limitNaira: number, roqquUsername?: string) {
   if (!token) return false
   try {
     const res = await fetch(`${BOT_URL}/wallet/registered`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token, address, dailyLimit: `₦${limitNaira.toLocaleString('en-NG')}` }),
+      body: JSON.stringify({ token, address, dailyLimit: `₦${limitNaira.toLocaleString('en-NG')}`, roqquUsername }),
     })
     return res.ok
   } catch {
@@ -140,7 +141,7 @@ const routes: Record<string, (body: any) => Promise<unknown>> = {
     }
   },
 
-  async '/api/wallet'({ id, publicKey, token, limit }: { id: string; publicKey: Hex; token?: string; limit?: number }) {
+  async '/api/wallet'({ id, publicKey, token, limit, username }: { id: string; publicKey: Hex; token?: string; limit?: number; username?: string }) {
     const limitNaira = LIMIT_CHOICES.includes(Number(limit)) ? Number(limit) : 10_000
     // The passkey's credential id + public key are all the backend ever sees.
     const passkey = toWebAuthnAccount({ credential: { id, publicKey } })
@@ -150,7 +151,7 @@ const routes: Record<string, (body: any) => Promise<unknown>> = {
     const fund = await send({ to: wallet.address, value: WALLET_FUNDING })
     const permission = newPermission(wallet.address, nairaToWei(limitNaira))
     wallets.set(wallet.address.toLowerCase(), { permission, limitNaira, credentialId: id, publicKey })
-    signups.set(wallet.address.toLowerCase(), { token: token || undefined })
+    signups.set(wallet.address.toLowerCase(), { token: token || undefined, username: String(username ?? '').slice(0, 40) || undefined })
     saveWallets()
     return {
       address: wallet.address,
@@ -171,7 +172,16 @@ const routes: Record<string, (body: any) => Promise<unknown>> = {
     saveWallets()
     const signup = signups.get(address.toLowerCase())
     signups.delete(address.toLowerCase())
-    return { approve: link(approve.hash), toldKolo: await tellKolo(w.permission.account, signup?.token, w.limitNaira) }
+    return { approve: link(approve.hash), toldKolo: await tellKolo(w.permission.account, signup?.token, w.limitNaira, signup?.username) }
+  },
+
+  // "Send everything to": a 0x address as typed, or a Kolo ID (@koda) looked up on Kolo.
+  async '/api/resolve'({ to }: { to: string }) {
+    const value = String(to ?? '').trim()
+    if (isAddress(value)) return { address: value }
+    const res = await fetch(`${BOT_URL}/wallet/resolve?id=${encodeURIComponent(value)}`).catch(() => undefined)
+    if (!res?.ok) throw new Error(`no one on Kolo has the ID ${value.startsWith('@') ? value : '@' + value}`)
+    return { address: (await res.json()).address, koloId: value.replace(/^@/, '').toLowerCase() }
   },
 
   // Owner's name and Kolo balance, and top-up links, come from the bot.
@@ -194,7 +204,7 @@ const routes: Record<string, (body: any) => Promise<unknown>> = {
     const balance = await balanceOf(address as Address)
     // The owner's name for the card, from Kolo (none once they've left Kolo).
     const owner = w.revoked ? {} : await fetch(`${BOT_URL}/wallet/balance?address=${address}`).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))
-    return { address, publicKey: w.publicKey, name: owner.name, balance: weiToNaira(balance), balanceEth: formatEther(balance), linkedToKolo: !w.revoked }
+    return { address, publicKey: w.publicKey, name: owner.name, koloId: owner.koloId, balance: weiToNaira(balance), balanceEth: formatEther(balance), linkedToKolo: !w.revoked }
   },
 
   async '/api/withdraw/prepare'({ credentialId, to }: { credentialId: string; to: string }) {
