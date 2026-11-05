@@ -5,34 +5,34 @@ export const APP_PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kolo Menu</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@700;800&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Encode+Sans:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root { color-scheme: light; --ink:#2a141c; --muted:#7d5a66; --bg:#fff6f8; --card:#fff; --line:#f6d9e1; --rose:#f2486e; --rose-top:#ff6f91; --rose-deep:#c92d55; --tint:#ffe9ef; --ok:#1f8a4c; }
   * { box-sizing: border-box }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 500 16px/1.5 "Plus Jakarta Sans", system-ui, sans-serif; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 500 16px/1.5 "Inter", system-ui, sans-serif; }
   main { max-width: 460px; margin: 0 auto; padding: 18px 16px 40px; }
   .top { display: flex; align-items: center; justify-content: space-between; }
-  .brand { font: 800 20px "Bricolage Grotesque", system-ui, sans-serif; display: flex; gap: 8px; align-items: center; }
+  .brand { font: 800 20px "Encode Sans", system-ui, sans-serif; display: flex; gap: 8px; align-items: center; }
   .group { font-size: 14px; color: var(--muted); font-weight: 600; }
-  h1 { font: 800 26px/1.15 "Bricolage Grotesque", system-ui, sans-serif; margin: 18px 0 12px; }
+  h1 { font: 800 26px/1.15 "Encode Sans", system-ui, sans-serif; margin: 18px 0 12px; }
   .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .stat { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 14px; }
   .label { font-size: 13px; color: var(--muted); font-weight: 600; }
-  .num { font: 800 24px "Bricolage Grotesque", system-ui, sans-serif; }
+  .num { font: 800 24px "Encode Sans", system-ui, sans-serif; }
   .dues { margin-top: 10px; background: linear-gradient(180deg, var(--rose-top), var(--rose)); color: #fff; border-radius: 20px; padding: 16px; }
   .dues .label { color: #ffe3ea; }
   .dues button { margin-top: 10px; background: #fff; color: var(--rose-deep); }
   .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 18px; }
-  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 14px 6px; text-align: center; font: 700 14px "Plus Jakarta Sans", sans-serif; color: var(--ink); cursor: pointer; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 14px 6px; text-align: center; font: 700 14px "Inter", sans-serif; color: var(--ink); cursor: pointer; }
   .tile b { display: block; font-size: 24px; margin-bottom: 4px; }
   .tile[aria-pressed="true"] { border-color: var(--rose); background: var(--tint); }
   .panel { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 16px; margin-top: 14px; }
-  .panel h2 { font: 800 18px "Bricolage Grotesque", sans-serif; margin: 0 0 4px; }
+  .panel h2 { font: 800 18px "Encode Sans", sans-serif; margin: 0 0 4px; }
   .field { width: 100%; border: 1.5px solid var(--line); border-radius: 14px; padding: 12px 14px; font: inherit; margin-top: 10px; background: #fff; }
   .people { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   .person { border: 1.5px solid var(--line); border-radius: 99px; padding: 7px 14px; background: #fff; font: 600 14px inherit; cursor: pointer; }
   .person[aria-pressed="true"] { background: var(--rose); border-color: var(--rose); color: #fff; }
-  button.go { width: 100%; border: 0; border-radius: 16px; padding: 14px; font: 700 16px "Plus Jakarta Sans", sans-serif; background: linear-gradient(180deg, var(--rose-top), var(--rose)); color: #fff; margin-top: 12px; cursor: pointer; }
+  button.go { width: 100%; border: 0; border-radius: 16px; padding: 14px; font: 700 16px "Inter", sans-serif; background: linear-gradient(180deg, var(--rose-top), var(--rose)); color: #fff; margin-top: 12px; cursor: pointer; }
   button.go:disabled { opacity: .6; }
   .reply { white-space: pre-wrap; background: var(--tint); border-radius: 16px; padding: 12px 14px; margin-top: 12px; font-size: 15px; }
   .muted { color: var(--muted); font-size: 14px; }
