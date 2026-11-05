@@ -273,7 +273,9 @@ export class Kolo {
     this.joinTokens.delete(token)
     this.wallets.set(who.memberId, address)
     this.owners.set(who.memberId, { name: who.name, chatId: who.chatId })
-    const id = this.claimKoloId(who.memberId, roqquUsername, who.name)
+    // Someone setting up a replacement wallet keeps their Kolo ID unless they typed a new one.
+    const kept = this.koloIds.get(who.memberId)
+    const id = kept && !roqquUsername?.trim() ? kept : this.claimKoloId(who.memberId, roqquUsername, who.name)
     const asked = cleanKoloId(roqquUsername ?? '')
     const note = asked && asked !== id ? `\n(@${asked} was already taken, so ${who.name} is @${id}. They can change it with /id [new name].)` : ''
     return [
@@ -904,22 +906,38 @@ export class Kolo {
     ]
   }
 
-  private join(msg: Incoming): Action[] {
+  private async join(msg: Incoming): Promise<Action[]> {
     const existing = this.wallets.get(msg.sender.id)
-    if (existing) {
+    const gone = existing ? await this.walletGone(existing) : false
+    if (existing && !gone) {
       const id = this.koloIds.get(msg.sender.id) ?? this.claimKoloId(msg.sender.id, undefined, msg.sender.name)
       return [this.text(msg, `${msg.sender.name}, you already have a Kolo wallet. Your Kolo ID is @${id}.\nWant your Roqqu username instead? Send /id [your Roqqu username].`)]
     }
+    // A wallet the wallet service no longer knows (made on an older version) can't be reached:
+    // set up a new one. The Kolo balance and Kolo ID belong to the member, so they stay.
+    if (gone) this.wallets.delete(msg.sender.id)
     // A one-time token ties the wallet page back to this person and group.
     const token = crypto.randomUUID().replace(/-/g, '')
     this.joinTokens.set(token, { chatId: msg.chatId, memberId: msg.sender.id, name: msg.sender.name })
+    const fresh = gone ? `Your old wallet was made on an earlier version of Kolo, so let's set up a new one. Your Kolo balance and Kolo ID stay the same.\n` : ''
     return [
       {
         type: 'dm',
         userId: msg.sender.id,
-        text: `Hi ${msg.sender.name}! Tap to set up your own Kolo wallet with your fingerprint or face (about 20 seconds): ${joinUrl()}/?t=${token}\nNo password, no seed phrase. Only your device can approve big payments.`,
+        text: `${fresh}Hi ${msg.sender.name}! Tap to set up your own Kolo wallet with your fingerprint or face (about 20 seconds): ${joinUrl()}/?t=${token}\nNo password, no seed phrase. Only your device can approve big payments.`,
       },
     ]
+  }
+
+  // True when the wallet service has no record of this wallet (so nothing can be sent to it).
+  private async walletGone(address: string) {
+    if (!this.walletInfo) return false
+    try {
+      await this.walletInfo.usage(address)
+      return false
+    } catch (error) {
+      return /no Kolo wallet/i.test((error as Error).message)
+    }
   }
 
   // "How much can Kolo still spend for me today?", read from the wallet's on-chain limit.
@@ -1042,6 +1060,9 @@ export class Kolo {
       if (isDown(error)) {
         this.waiting.push({ kind: 'cashout', chatId: msg.chatId, member: msg.sender, amount })
         return [this.text(msg, `${msg.sender.name}, ${DOWN} I've saved your ${naira(amount)} cash-out and I'll send it the moment it's back. Your balance stays ${naira(balance)} until then.`)]
+      }
+      if (/not a Kolo wallet/.test((error as Error).message)) {
+        return [this.text(msg, `${msg.sender.name}, I can't reach your wallet: it was made on an earlier version of Kolo. Send /join to set up a new one (your balance and Kolo ID stay), then cash out again. Your balance is unchanged.`)]
       }
       return [this.text(msg, `Roqqu couldn't send it: ${(error as Error).message}. Your balance is unchanged.`)]
     }

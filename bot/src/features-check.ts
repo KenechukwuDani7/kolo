@@ -121,11 +121,11 @@ out = await kolo.handle(inDm('/app'))
 expect(/\/app\/[a-f0-9]{32}/.test(words(out)), '/app in a private chat gives a menu link for their group', words(out))
 
 // Kolo IDs: the Roqqu username typed at sign-up becomes the ID; a taken one falls back to the name.
-kolo.handle(say(ike, '/join'))
+await kolo.handle(say(ike, '/join'))
 let joinToken = [...(kolo as any).joinTokens].find(([, w]: any) => w.memberId === ike.id)[0]
 out = kolo.walletReady(joinToken, '0x' + '1'.repeat(40), '₦10,000', '@Koda')
 expect(kolo.koloIdOf(ike.id) === 'koda' && words(out).includes('@koda'), "Koda's Roqqu username becomes the Kolo ID @koda", words(out))
-kolo.handle(say(clinton, '/join'))
+await kolo.handle(say(clinton, '/join'))
 joinToken = [...(kolo as any).joinTokens].find(([, w]: any) => w.memberId === clinton.id)[0]
 out = kolo.walletReady(joinToken, '0x' + '2'.repeat(40), '₦10,000', 'koda')
 expect(/^clinton\d+$/.test(kolo.koloIdOf(clinton.id) ?? '') && words(out).includes('already taken'), 'a taken username gets an ID from the name instead', words(out))
@@ -140,6 +140,19 @@ out = await kolo.handle(say(ike, '/send @nobody99 500'))
 expect(words(out).includes("don't know the Kolo ID"), 'an unknown Kolo ID is refused', words(out))
 out = await kolo.handle(say(ike, '/id kodaa'))
 expect(kolo.koloIdOf(ike.id) === 'kodaa' && kolo.walletOfKoloId('@kodaa') === '0x' + '1'.repeat(40), '/id kodaa changes the ID, and the wallet page can find it', words(out))
+
+// A wallet made before the wallet service kept records: /join sets up a new one, keeping balance and ID.
+const oldWallets = new Kolo(undefined, payments, {
+  usage: async () => { throw new Error('no Kolo wallet with that address') },
+  revoke: async () => null,
+})
+oldWallets.restore(JSON.parse(JSON.stringify(kolo.snapshot())))
+const kodaBalance = oldWallets.balanceOf(ike.id)
+out = await oldWallets.handle(say(ike, '/join'))
+const newToken = [...(oldWallets as any).joinTokens].find(([, w]: any) => w.memberId === ike.id)?.[0]
+expect(!!newToken && words(out).includes('earlier version'), '/join with an unreachable old wallet sends a fresh sign-up link', words(out))
+oldWallets.walletReady(newToken, '0x' + '3'.repeat(40), '₦10,000')
+expect(oldWallets.koloIdOf(ike.id) === 'kodaa' && oldWallets.balanceOf(ike.id) === kodaBalance, 'the new wallet keeps the Kolo ID and balance')
 
 // State survives a restart (snapshot → restore).
 const restored = new Kolo(undefined, payments)
