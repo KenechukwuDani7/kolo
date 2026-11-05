@@ -240,7 +240,7 @@ ${LOGO_SPRITE}
     <div class="box step"><div class="n">1</div><h3>Ask</h3><p>“Kolo, everybody drop 2k for project.”</p></div>
     <div class="box step"><div class="n">2</div><h3>Pay</h3><p>Everyone gets a private pay link, priced in naira.</p></div>
     <div class="box step"><div class="n">3</div><h3>Tick</h3><p>Kolo ticks each person in the group when Roqqu confirms.</p></div>
-    <div class="box step"><div class="n">4</div><h3>Vote</h3><p>Spending the group pot needs a group vote.</p></div>
+    <div class="box step"><div class="n">4</div><h3>Vote</h3><p>Spending the pot needs a group vote, and a group admin’s yes.</p></div>
     <div class="box step last"><div class="n">5</div><h3>Receipt</h3><p>Yes wins, Roqqu pays out, everyone sees the receipt.</p></div>
   </div>
 </div></section>
@@ -250,7 +250,7 @@ ${LOGO_SPRITE}
   <div class="grid g3">
     ${box('hand-coins', 'Collect dues', 'Personal pay links, automatic ticks and a live progress card. Late payers still reach the pot.')}
     ${box('receipt', 'Split bills', '“Kolo split 9k between me, Ada and Tobi.” Everyone gets a link for their share.')}
-    ${box('vote', 'Vote to spend', 'Money leaves the group pot only when the group says yes, with a receipt for all.')}
+    ${box('vote', 'Vote to spend', 'Money leaves the group pot only when the majority says yes, including a group admin, with a receipt for all.')}
     ${box('bell-ring', 'Remind and track', 'See who has paid, and nudge the rest without being the bad guy.')}
     ${box('wallet', 'Your own wallet and Kolo ID', 'Top up, cash out, and send to anyone by their Kolo ID, like <code>/send @ada 2k</code>.')}
     ${box('smartphone', 'A web menu', 'Prefer tapping to typing? <code>/app</code> sends you a private menu link.')}

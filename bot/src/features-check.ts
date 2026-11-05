@@ -141,6 +141,21 @@ expect(words(out).includes("don't know the Kolo ID"), 'an unknown Kolo ID is ref
 out = await kolo.handle(say(ike, '/id kodaa'))
 expect(kolo.koloIdOf(ike.id) === 'kodaa' && kolo.walletOfKoloId('@kodaa') === '0x' + '1'.repeat(40), '/id kodaa changes the ID, and the wallet page can find it', words(out))
 
+// Pot spends need a group admin's yes as well as the majority (Koda is the only admin here).
+const guarded = new Kolo(undefined, payments)
+guarded.restore(JSON.parse(JSON.stringify(kolo.snapshot())))
+const potBefore = guarded.potOf(group)
+const asAdminGroup = (sender: Member, text: string, mentions: Member[] = []): Incoming => ({ ...say(sender, text, mentions), admins: [ike.id] })
+out = await guarded.handle(asAdminGroup(excel, '/spend 1k @Clinton snacks', [clinton]))
+const spendPoll = out.find((a) => a.type === 'poll') as { pollId: string } | undefined
+expect(!!spendPoll && words(out).includes('including a group admin (Koda)'), 'a spend vote says an admin must say yes', words(out))
+out = await guarded.handlePollTally(spendPoll!.pollId, { Yes: [excel.id, clinton.id], No: [] })
+expect(guarded.potOf(group) === potBefore && words(out).includes('also has to vote yes'), 'two friends voting yes without an admin pays nothing', words(out))
+out = await guarded.handlePollTally(spendPoll!.pollId, { Yes: [excel.id, clinton.id, ike.id], No: [] })
+expect(guarded.potOf(group) === potBefore - 1000, "with the admin's yes, the pot pays", words(out))
+out = await guarded.handle(asAdminGroup(excel, '/spend 1k @Koda snacks', [ike]))
+expect(!words(out).includes('including a group admin'), "the admin being paid can't approve their own payment", words(out))
+
 // A wallet made before the wallet service kept records: /join sets up a new one, keeping balance and ID.
 const oldWallets = new Kolo(undefined, payments, {
   usage: async () => { throw new Error('no Kolo wallet with that address') },

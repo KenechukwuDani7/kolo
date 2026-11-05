@@ -236,6 +236,8 @@ if (existsSync(STATE_FILE)) {
 }
 // Group member ids, and the display names people have shown while chatting.
 const groupMembers = new Map<string, string[]>()
+// The WhatsApp group's admins (the class rep, the exec): one of them must also approve a pot spend.
+const groupAdmins = new Map<string, Set<string>>()
 const names = new Map<string, string>()
 // Ids of messages Kolo itself sent, so it never answers its own replies.
 const sentIds = new Set<string>()
@@ -327,7 +329,7 @@ createServer(async (req, res) => {
         }
         if (!words[action]) throw new Error('Unknown action')
         const mentions = others.filter((m) => people?.includes(m.id))
-        actions = await kolo.handle({ chatId, isGroup: true, sender: member, members: [member, ...others], text: words[action], mentions, mentionsBot: false })
+        actions = await kolo.handle({ chatId, isGroup: true, sender: member, members: [member, ...others], admins: [...(groupAdmins.get(chatId) ?? [])], text: words[action], mentions, mentionsBot: false })
       }
       await performNow?.(actions)
       saveState()
@@ -556,6 +558,7 @@ async function start() {
       const { subject, participants } = await sock.groupMetadata(chatId)
       groupNames.set(chatId, subject)
       groupMembers.set(chatId, participants.map((p) => p.id).filter((id) => !isMe(id)))
+      groupAdmins.set(chatId, new Set(participants.filter((p) => p.admin).map((p) => p.id)))
       // Groups address people by LID; remember their phone numbers for USSD callers.
       for (const p of participants) {
         for (const jid of [p.phoneNumber, p.id]) if (jid?.endsWith('@s.whatsapp.net')) memberIdByPhone.set(phoneDigits(jid.split('@')[0]), p.id)
@@ -565,9 +568,10 @@ async function start() {
     return groupMembers.get(chatId)!.map((id) => ({ id, name: nameOf(id) }))
   }
 
-  // Membership changes (someone added or removed) refresh the list on the next message.
+  // Membership changes (added, removed, made or unmade admin) refresh the lists on the next message.
   sock.ev.on('group-participants.update', ({ id }) => {
     groupMembers.delete(id)
+    groupAdmins.delete(id)
     if (allowedIds.has(id)) void membersOf(id).catch(() => undefined)
   })
 
@@ -670,7 +674,10 @@ async function start() {
         // Group chat that isn't for Kolo is dropped here: not logged, not read, not sent to the AI.
         if (!isAddressed(incoming)) continue
         console.log(`${group ? 'group' : 'dm'} ${nameOf(senderId)}: ${text}`)
-        if (group) incoming.members = await membersOf(chatId)
+        if (group) {
+          incoming.members = await membersOf(chatId)
+          incoming.admins = [...(groupAdmins.get(chatId) ?? [])]
+        }
         // Show "typing…" while the AI reads the message (it can take a few seconds).
         await sock.sendPresenceUpdate('composing', chatId)
         const actions = await kolo.handle(incoming)

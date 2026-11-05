@@ -24,6 +24,8 @@ export type Incoming = {
   replyTo?: { kolo: string; asked?: string }
   // In a private chat with Kolo: the Kolo group the sender belongs to.
   groupId?: string
+  // The WhatsApp group's admins (member ids). A pot spend also needs one of them to vote yes.
+  admins?: string[]
 }
 
 export type Action =
@@ -68,11 +70,17 @@ type Collection = {
   paid: Map<string, string>
   links: Map<string, string> // member id → their pay link
 }
-type Poll = { chatId: string; question: string; needed: number; settled: boolean; spend?: Spend }
+// approvers: for a spend, the admins whose yes is also needed (never the person being paid).
+type Poll = { chatId: string; question: string; needed: number; settled: boolean; spend?: Spend; approvers?: Member[] }
 
 // Read on every use: the public wallet link can change while Kolo runs (see scripts/tunnels.mjs).
 const joinUrl = () => process.env.JOIN_URL ?? 'http://localhost:3116'
 const naira = (n: number) => `₦${n.toLocaleString('en-NG')}`
+// "Ada", "Ada or Tobi", "Ada, Tobi or Chidi"
+const listNames = (people: Member[]) => {
+  const names = people.map((p) => p.name)
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names.at(-1)}` : names[0] ?? ''
+}
 // WhatsApp renders "@<number>" as the person's name when their id is in `mentions`.
 const tag = (m: Member) => `@${m.id.split('@')[0]}`
 // Starting balance before any top-up (0: money only comes in through a real top-up).
@@ -1104,13 +1112,18 @@ export class Kolo {
     if (amount > pot) return [this.text(msg, `The pot only has ${naira(pot)}, so I can't spend ${naira(amount)}. Collect more with /dues first.`)]
     const spend: Spend = { amount, to: to[0], purpose: purpose || 'group expense', by: msg.sender }
     const pollId = `poll-${++this.pollCount}`
-    // A spend needs a majority of the group, the person asking included.
+    // A spend needs a majority of the group, the person asking included, and a yes from one of
+    // the group's admins, so a few friends can't vote the pot to themselves. The person being
+    // paid can't be the approving admin.
     const needed = Math.floor(Math.max(msg.members.length, 1) / 2) + 1
+    const everyone = [msg.sender, ...msg.members]
+    const approvers = (msg.admins ?? []).filter((id) => id !== spend.to.id).map((id) => everyone.find((m) => m.id === id) ?? { id, name: 'a group admin' })
     const question = `Spend ${naira(amount)} from the pot: pay ${spend.to.name} for ${spend.purpose}?`
-    this.polls.set(pollId, { chatId: msg.chatId, question, needed, settled: false, spend })
+    this.polls.set(pollId, { chatId: msg.chatId, question, needed, settled: false, spend, approvers })
+    const rule = approvers.length ? `${needed} people, including a group admin (${listNames(approvers)})` : `${needed} people`
     return [
-      this.text(msg, `${msg.sender.name} wants to spend ${naira(amount)} from the pot (${naira(pot)} in it). Vote below. Once ${needed} people say yes, I'll pay ${spend.to.name}.`),
-      { type: 'poll', chatId: msg.chatId, pollId, question: `${question} (needs ${needed} yes)`, options: ['Yes', 'No'] },
+      this.text(msg, `${msg.sender.name} wants to spend ${naira(amount)} from the pot (${naira(pot)} in it). Vote below. Once ${rule} say yes, I'll pay ${spend.to.name}.`),
+      { type: 'poll', chatId: msg.chatId, pollId, question: `${question} (needs ${needed} yes${approvers.length ? ', incl. an admin' : ''})`, options: ['Yes', 'No'] },
     ]
   }
 
@@ -1151,6 +1164,11 @@ export class Kolo {
     if (!poll || poll.settled) return []
     const yes = tally['Yes']?.length ?? 0
     const no = tally['No']?.length ?? 0
+    // A spend with enough yes votes still waits for an admin's yes.
+    const adminSaidYes = !poll.approvers?.length || (tally['Yes'] ?? []).some((id) => poll.approvers!.some((a) => a.id === id))
+    if (yes >= poll.needed && !adminSaidYes) {
+      return [{ type: 'text', chatId: poll.chatId, text: `"${poll.question}" has ${yes} yes, but a group admin (${listNames(poll.approvers!)}) also has to vote yes before I pay.` }]
+    }
     if (yes >= poll.needed) {
       poll.settled = true
       if (poll.spend) return this.paySpend(poll, poll.spend, yes)
@@ -1262,8 +1280,8 @@ export const FEATURES = {
     icon: '🏦',
     name: 'Spend from the pot',
     say: '/spend [amount] @[name] [what for]',
-    short: 'Pay someone from the group pot. The group votes first.',
-    long: 'Money everyone paid in sits in the group pot, not in anybody\'s personal account. To spend it, ask me who to pay, how much and what for. I start a vote, and only when the majority says yes do I pay them through Roqqu and post a receipt. /pot shows what is in it.',
+    short: 'Pay someone from the group pot. The group votes first, and a group admin must say yes too.',
+    long: 'Money everyone paid in sits in the group pot, not in anybody\'s personal account. To spend it, ask me who to pay, how much and what for. I start a vote, and only when the majority says yes, including one of the WhatsApp group\'s admins, do I pay them through Roqqu and post a receipt. The person being paid can\'t be the approving admin. /pot shows what is in it.',
   },
   join: {
     icon: '🔐',
