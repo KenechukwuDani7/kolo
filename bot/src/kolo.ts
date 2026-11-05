@@ -908,7 +908,7 @@ export class Kolo {
     const existing = this.wallets.get(msg.sender.id)
     if (existing) {
       const id = this.koloIds.get(msg.sender.id) ?? this.claimKoloId(msg.sender.id, undefined, msg.sender.name)
-      return [this.text(msg, `${msg.sender.name}, you already have a Kolo wallet. Your Kolo ID is @${id}.`)]
+      return [this.text(msg, `${msg.sender.name}, you already have a Kolo wallet. Your Kolo ID is @${id}.\nWant your Roqqu username instead? Send /id [your Roqqu username].`)]
     }
     // A one-time token ties the wallet page back to this person and group.
     const token = crypto.randomUUID().replace(/-/g, '')
