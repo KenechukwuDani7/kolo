@@ -24,6 +24,7 @@ import qrcode from 'qrcode-terminal'
 import { Kolo, isAddressed, type Action, type Incoming, type Member, type Payments, type WalletInfo } from './kolo.js'
 import { createPaymentLink, decryptWebhook, deposits, generateWallet, nairaPerDollar, roqquEnabled, send, setOutage } from './roqqu.js'
 import { APP_PAGE } from './app-page.js'
+import { landingPage } from './landing-page.js'
 import { checkoutPage, simLinks, simulatedPayments } from './sim-pay.js'
 import { ussd } from './ussd.js'
 import { USSD_PAGE } from './ussd-page.js'
@@ -454,7 +455,12 @@ createServer(async (req, res) => {
   // or anyone could link their phone and take over the bot's WhatsApp number.
   const local = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(req.headers.host ?? '')
   if (!local) {
-    res.writeHead(302, { location: '/ussd' }).end()
+    // The public address shows the landing page; the login page below stays local only.
+    if (req.method === 'GET' && (req.url === '/' || req.url?.startsWith('/?'))) {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(landingPage(process.env.JOIN_URL ?? 'http://localhost:3116'))
+      return
+    }
+    res.writeHead(302, { location: '/' }).end()
     return
   }
   // Outage drill, for demos and tests: /outage?on=1 makes every Roqqu call fail as if
@@ -638,20 +644,23 @@ async function start() {
         const senderId = group ? (msg.key.participant ?? jidNormalizedUser(sock.user!.id)) : privateFrom!.id
         const senderName = msg.pushName ?? (msg.key.fromMe ? sock.user?.name : undefined)
         if (senderName) names.set(senderId, senderName)
-        console.log(`${group ? 'group' : 'dm'} ${nameOf(senderId)}: ${text}`)
         const incoming: Incoming = {
           chatId,
           isGroup: group,
           sender: { id: senderId, name: nameOf(senderId) },
-          members: group ? await membersOf(chatId) : [],
+          members: [],
           text,
           mentionsBot: mentioned.some(isMe),
           mentions: mentioned.filter((j) => !isMe(j)).map((id) => ({ id, name: nameOf(id) })),
           replyTo: replyToKolo(content),
           groupId: privateFrom?.groupId,
         }
+        // Group chat that isn't for Kolo is dropped here: not logged, not read, not sent to the AI.
+        if (!isAddressed(incoming)) continue
+        console.log(`${group ? 'group' : 'dm'} ${nameOf(senderId)}: ${text}`)
+        if (group) incoming.members = await membersOf(chatId)
         // Show "typing…" while the AI reads the message (it can take a few seconds).
-        if (isAddressed(incoming)) await sock.sendPresenceUpdate('composing', chatId)
+        await sock.sendPresenceUpdate('composing', chatId)
         const actions = await kolo.handle(incoming)
         await sock.sendPresenceUpdate('paused', chatId)
         await perform(actions, msg)
