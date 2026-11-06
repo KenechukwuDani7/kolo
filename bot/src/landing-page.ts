@@ -246,7 +246,7 @@ ${LOGO_SPRITE}
 </div></section>
 
 <section id="features"><div class="wrap">
-  <div class="head"><span class="eyebrow">What Kolo does</span><h2>Everything a group does with money.</h2></div>
+  <div class="head"><span class="eyebrow">What Kolo does</span><h2>Everything you and your groups do with money.</h2></div>
   <div class="grid g3">
     ${box('hand-coins', 'Collect dues', 'Personal pay links, automatic ticks and a live progress card. Late payers still reach the pot.')}
     ${box('receipt', 'Split bills', '“Kolo split 9k between me, Ada and Tobi.” Everyone gets a link for their share.')}
