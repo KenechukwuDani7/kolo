@@ -225,6 +225,29 @@ expect(words(out).includes('Sent.'), '/pay @someone [amount] still sends money',
 out = asks.expireClaims(Date.now() + 8 * 86_400_000)
 expect(words(out).includes("wasn't paid in 7 days") && ![...(asks as any).requests].length, 'unpaid requests close after 7 days', words(out))
 
+// Said casually ("Kolo abeg send 08031234567 2k", "Kolo ask @excel for 1k"): the AI reads the
+// action and amount; numbers, Kolo IDs and contact cards are found like /send does.
+const reads = (action: 'pay' | 'request', amount: number, unknownNames: string[] = [], title: string | null = null) =>
+  async () => ({ action, amount, title, people: [], unknownNames, includeSender: false, payee: null, question: null, topic: null, reply: null, language: 'English' })
+const casual = (reader: () => Promise<any>) => {
+  const k = new Kolo(reader as any, payments)
+  k.restore(JSON.parse(JSON.stringify(asks.snapshot())))
+  ;(k as any).balances.set(ike.id, 5000)
+  return k
+}
+let chat = casual(reads('pay', 2000, ['08031234567']))
+out = await chat.handle(say(ike, 'Kolo abeg send 08031234567 2k for data'))
+expect(words(out).includes('waiting for') && chat.balanceOf(ike.id) === 3000, '"Kolo send 0803… 2k" pays a phone number', words(out))
+chat = casual(reads('pay', 1000, ['excel']))
+out = await chat.handle(say(ike, 'Kolo send @excel 1k'))
+expect(words(out).includes('Sent.') && chat.balanceOf(excel.id) === asks.balanceOf(excel.id) + 1000, '"Kolo send @excel 1k" pays a Kolo ID', words(out))
+chat = casual(reads('request', 1500, [], 'the cake'))
+out = await chat.handle({ ...say(ike, 'Kolo ask her for 1500 for the cake'), contact: { name: 'Bisi', phone: '2348077777777' } })
+expect(words(out).includes('asking you for ₦1,500 for the cake') && out.some((a) => a.type === 'dm' && a.userId === '2348077777777@s.whatsapp.net'), '"Kolo ask her for 1500" on a contact card requests from that contact', words(out))
+chat = casual(reads('request', 3000, ['Tunde']))
+out = await chat.handle(say(ike, 'Kolo Tunde owes me 3k'))
+expect(words(out).includes('Tunde') && !words(out).includes('Request sent'), 'an unknown name still gets asked who they mean', words(out))
+
 // A wallet made before the wallet service kept records: /join sets up a new one, keeping balance and ID.
 const oldWallets = new Kolo(undefined, payments, {
   usage: async () => { throw new Error('no Kolo wallet with that address') },

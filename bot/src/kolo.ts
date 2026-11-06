@@ -710,11 +710,20 @@ export class Kolo {
         if (unknown.length) return [this.askWho(msg, unknown)]
         return this.split(msg, intent.amount ?? undefined, people, intent.includeSender, intent.payee ? this.resolve(msg, [intent.payee])[0] ?? msg.members.find((m) => m.id === msg.sender.id) : undefined)
       case 'pay':
-        return this.pay(msg, intent.amount ?? undefined, people, unknown)
-      case 'request':
-        if (unknown.length) return [this.askWho(msg, unknown)]
-        // The members the AI named count as tagged; its title is what the money is for.
-        return this.request({ ...msg, mentions: [...new Map([...msg.mentions, ...people].map((m) => [m.id, m])).values()] }, [String(intent.amount ?? ''), intent.title ?? ''].filter(Boolean))
+      case 'request': {
+        // "Kolo send @koda 2k", "Kolo abeg send 08031234567 2k", "Kolo ask her for 2k" on a contact
+        // card: Kolo IDs, numbers and cards the AI can't know, found the same way as for /send.
+        const words = msg.text.split(/\s+/)
+        const extra = this.named(msg, words)
+        const byId = unknown.map((n) => this.memberByKoloId(n)).filter((m): m is Member => !!m)
+        const all = [...new Map([...people, ...byId, ...extra.people].map((m) => [m.id, m])).values()]
+        const key = (n: string) => n.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+        const left = unknown.filter((n) => !phoneArg(n) && !this.memberByKoloId(n) && !all.some((m) => key(m.name) === key(n)))
+        if (left.length) return [this.askWho(msg, left)]
+        if (intent.action === 'pay') return !all.length && extra.contact ? this.payContact(msg, intent.amount ?? undefined, extra.contact) : this.pay(msg, intent.amount ?? undefined, all, [])
+        // The people found count as tagged; the AI's title is what the money is for.
+        return this.request({ ...msg, mentions: all }, [String(intent.amount ?? ''), intent.title ?? '', ...words.filter((w) => phoneArg(w))].filter(Boolean))
+      }
       case 'poll':
         return this.startPoll(msg, intent.question ?? '')
       case 'spend':
@@ -1516,16 +1525,16 @@ export const FEATURES = {
   pay: {
     icon: '💸',
     name: 'Pay someone',
-    say: '/send @[name or Kolo ID] [amount], or /send [phone number] [amount]',
+    say: 'Kolo send [name] [amount], or /send @[name or Kolo ID] [amount]',
     short: 'Send money from your Kolo balance to someone in the group, any Kolo ID, or any WhatsApp contact.',
-    long: 'Moves money from your Kolo balance to theirs straight away, and DMs them. Tag someone in the group, or use their Kolo ID (like @koda) to pay anyone on Kolo, even in another group. To pay someone who isn\'t on Kolo yet, reply to their WhatsApp contact card with /send 2k, send me their contact privately, or type their number (/send 08031234567 2k). I message them a link to open a free wallet, and the money waits for them; if they don\'t claim it within 7 days, it comes back to you. Top up first with /topup if your balance is low.',
+    long: 'Moves money from your Kolo balance to theirs straight away, and DMs them. Just say it: "Kolo, send Ada 2k for data". Use their Kolo ID ("Kolo send @koda 2k") to pay anyone on Kolo, even in another group. To pay someone who isn\'t on Kolo yet, reply "Kolo send her 2k" to their WhatsApp contact card, or use their number ("Kolo abeg send 08031234567 2k"). Shortcut: /send @ada 2k. I message them a link to open a free wallet, and the money waits for them; if they don\'t claim it within 7 days, it comes back to you. Top up first with /topup if your balance is low.',
   },
   request: {
     icon: '🙏',
     name: 'Request money',
-    say: '/request @[name or Kolo ID] [amount] [what for], or /request [phone number] [amount]',
+    say: 'Kolo, [name] owes me [amount] for [what], or /request @[name or Kolo ID] [amount]',
     short: 'Ask anyone for money: a group member, any Kolo ID, or any WhatsApp contact.',
-    long: 'Ask someone to pay you, like "/request @clinton 2k for jollof". I DM them privately with a Roqqu pay link, and if they are on Kolo they can also pay from their Kolo balance with /pay, or say no with /decline. To ask someone who isn\'t on Kolo, reply to their WhatsApp contact card with /request 2k, or type their number (/request 08031234567 2k); they pay with the link, no account needed. The money lands in your Kolo balance and I tell you the moment it does. Requests close after 7 days.',
+    long: 'Ask someone to pay you, in your own words: "Kolo, Clinton owes me 2k for the jollof" or "Kolo ask @koda for 1500" (shortcut: /request @clinton 2k jollof). I DM them privately with a Roqqu pay link, and if they are on Kolo they can also pay from their Kolo balance with /pay, or say no with /decline. To ask someone who isn\'t on Kolo, reply "Kolo, ask him for 2k" to their WhatsApp contact card, or use their number ("Kolo request 2k from 08031234567"); they pay with the link, no account needed. The money lands in your Kolo balance and I tell you the moment it does. Requests close after 7 days.',
   },
   id: {
     icon: '🪪',
