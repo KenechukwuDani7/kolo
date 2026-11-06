@@ -702,8 +702,8 @@ export class Kolo {
 
   private fromIntent(msg: Incoming, intent: Intent): Action[] | Promise<Action[]> {
     // WhatsApp tags reach the AI as digits ("@2762…"), so it can't name them: the tagged people
-    // come from the mentions, and those digit names are dropped.
-    const people = [...new Map([...this.resolve(msg, intent.people), ...msg.mentions.filter((m) => m.id !== msg.sender.id)].map((m) => [m.id, m])).values()]
+    // come from the mentions (named by the AI's match when it has one), and digit names are dropped.
+    const people = [...new Map([...msg.mentions.filter((m) => m.id !== msg.sender.id), ...this.resolve(msg, intent.people)].map((m) => [m.id, m])).values()]
     const unknown = intent.unknownNames.filter((n) => n && !/^@?\d{6,}$/.test(n.trim()))
     switch (intent.action) {
       case 'dues':
