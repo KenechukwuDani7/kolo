@@ -193,6 +193,38 @@ expect(contacts.balanceOf(ike.id) === 2500 && words(out).includes("wasn't claime
 out = await contacts.handle({ ...say(ike, '/send 1k'), contact: { name: 'Excel', phone: '2348000000001', memberId: excel.id } })
 expect(words(out).includes('Sent.') && !words(out).includes('waiting for'), "a contact who's already a member is paid straight away", words(out))
 
+// Money requests: ask a member, a Kolo ID or a contact; they pay by balance or link, or decline.
+const asks = new Kolo(undefined, payments)
+asks.restore(JSON.parse(JSON.stringify(kolo.snapshot())))
+;(asks as any).balances.set(clinton.id, 5000)
+;(asks as any).koloIds.set(excel.id, 'excel')
+const kodaAsks = asks.balanceOf(ike.id)
+out = await asks.handle(say(ike, '/request 2k for jollof', [clinton]))
+const clintonDm = out.find((a) => a.type === 'dm' && a.userId === clinton.id)
+const code = words(out).match(/\/pay (R\d{3})/)?.[1]
+expect(!!clintonDm && !!code && words(out).includes('asking you for ₦2,000 for jollof') && words(out).includes('Or pay with Roqqu'), '/request DMs Clinton the amount, a /pay code and a Roqqu link', words(out))
+out = await asks.handle({ ...say(clinton, `/pay ${code}`), chatId: 'clinton-dm', isGroup: false, groupId: group })
+expect(asks.balanceOf(clinton.id) === 3000 && asks.balanceOf(ike.id) === kodaAsks + 2000, '/pay moves ₦2,000 from Clinton to Koda', words(out))
+expect(out.some((a) => a.type === 'text' && a.chatId === group && a.text.includes('Clinton paid Koda ₦2,000 for jollof')), 'the group sees the request was paid', words(out))
+out = await asks.handle({ ...say(clinton, `/pay ${code}`), chatId: 'clinton-dm', isGroup: false, groupId: group })
+expect(words(out).includes("can't find"), 'a request can only be paid once', words(out))
+out = await asks.handle(say(ike, '/request @excel 1500 uber'))
+const excelRef = [...(asks as any).references].find(([, r]: any) => r.kind === 'request' && r.memberId === excel.id)?.[0]
+expect(!!excelRef && words(out).includes('for uber'), 'a Kolo ID works for /request, with a pay link', words(out))
+const kodaBeforeLink = asks.balanceOf(ike.id)
+out = asks.confirmPayment(excelRef)
+expect(asks.balanceOf(ike.id) === kodaBeforeLink + 1500 && words(out).includes('Excel paid your request'), 'paying the Roqqu link lands in the asker’s balance', words(out))
+out = await asks.handle({ ...say(ike, '/request 3k'), contact: { name: 'Bisi', phone: '2348077777777' } })
+const bisiDm = out.find((a) => a.type === 'dm' && a.userId === '2348077777777@s.whatsapp.net')
+expect(!!bisiDm && words([bisiDm!]).includes('no account or app needed') && !words([bisiDm!]).includes('/pay R'), 'a contact not on Kolo gets just the pay link', words(out))
+await asks.handle(say(ike, '/request 1k data', [clinton]))
+out = await asks.handle({ ...say(clinton, '/decline'), chatId: 'clinton-dm', isGroup: false, groupId: group })
+expect(words(out).includes('declined') && out.some((a) => a.type === 'dm' && a.userId === ike.id), '/decline tells the asker', words(out))
+out = await asks.handle(say(ike, '/pay @Excel 500'))
+expect(words(out).includes('Sent.'), '/pay @someone [amount] still sends money', words(out))
+out = asks.expireClaims(Date.now() + 8 * 86_400_000)
+expect(words(out).includes("wasn't paid in 7 days") && ![...(asks as any).requests].length, 'unpaid requests close after 7 days', words(out))
+
 // A wallet made before the wallet service kept records: /join sets up a new one, keeping balance and ID.
 const oldWallets = new Kolo(undefined, payments, {
   usage: async () => { throw new Error('no Kolo wallet with that address') },

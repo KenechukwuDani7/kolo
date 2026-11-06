@@ -13,7 +13,7 @@ try {
 
 export const Intent = z.object({
   action: z
-    .enum(['dues', 'paid', 'split', 'pay', 'spend', 'cashout', 'topup', 'balance', 'deleteaccount', 'limit', 'poll', 'remind', 'status', 'join', 'app', 'help', 'chat'])
+    .enum(['dues', 'paid', 'split', 'pay', 'request', 'spend', 'cashout', 'topup', 'balance', 'deleteaccount', 'limit', 'poll', 'remind', 'status', 'join', 'app', 'help', 'chat'])
     .describe('The single thing the sender wants Kolo to do'),
   amount: z.number().nullable().describe('Amount in naira as a plain number (2k → 2000), or null'),
   title: z.string().nullable().describe('What the money is for, e.g. "CSC 301 project fund", "shawarma" or "projector", or null'),
@@ -26,7 +26,7 @@ export const Intent = z.object({
     .describe('For split: the group member who should RECEIVE the money, when it is not the sender (e.g. "split Clinton\'s 6k bill among us" → "Clinton"), else null'),
   question: z.string().nullable().describe('For poll: the yes/no question, cleaned up, or null'),
   topic: z
-    .enum(['dues', 'paid', 'status', 'remind', 'split', 'pay', 'spend', 'cashout', 'topup', 'limit', 'poll', 'join'])
+    .enum(['dues', 'paid', 'status', 'remind', 'split', 'pay', 'request', 'spend', 'cashout', 'topup', 'limit', 'poll', 'join'])
     .nullable()
     .describe('For help: the one feature they asked how to use, or null for a general "what can you do"'),
   reply: z
@@ -56,7 +56,8 @@ Actions:
 
 - dues: start a group collection ("everybody drop 2k for project", "collect 1500 each for dinner")
 - paid: the sender says they have paid the current collection ("I don pay", "sent mine")
-- split: share a bill between people ("split 15k suya between me, Excel and Clinton"), or bill/charge someone for something the sender paid ("send Clinton the bill for shawarma", "Ada owes me 3k", "charge Excel for the uber"). When billing someone, includeSender is false and people is just them. If the money should go to someone other than the sender ("split Clinton's 6k diapers bill among all of us", "everybody pay Ada back for the cake"), set payee to that person; people is everyone sharing the bill (the payee too if they share it), and "all of us" / "everyone in this group" means every member listed.
+- split: share a bill between people ("split 15k suya between me, Excel and Clinton"). If the money should go to someone other than the sender ("split Clinton's 6k diapers bill among all of us", "everybody pay Ada back for the cake"), set payee to that person; people is everyone sharing the bill (the payee too if they share it), and "all of us" / "everyone in this group" means every member listed.
+- request: the sender asks specific people to pay THEM a set amount ("ask Clinton for 2k for jollof", "Ada owes me 3k", "charge Excel 1500 for the uber", "make Chidi pay me 5k", "request 2k from Ada"). people = who should pay, amount = what each pays, title = what it is for. No total to divide: that is split.
 - pay: the sender sends their OWN money to specific people ("abeg send Chidi 2k for data", "pay Ada back her 5k")
 - spend: pay someone out of the GROUP POT / treasury / the money we collected ("use 5k from the pot to pay Excel for the projector", "make the pot pay Clinton 3k for printing", "release 10k from our money give Ada for the venue"). people = who receives it, title = what it is for.
 - app: wants the Kolo web menu / website / app link, to do things with taps ("send me the kolo website", "open the menu for me")

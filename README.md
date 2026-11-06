@@ -10,6 +10,7 @@ Collect dues, split bills, pay anyone by Kolo ID or phone number, and keep your 
 - **No data? Dial USSD.** Pay your dues from any phone with a PIN, and the WhatsApp group sees it instantly.
 - Money sits in a **group pot**, never in someone's personal account, and leaves only when the **group votes yes**, with a receipt. The yes votes must include one of the **WhatsApp group's admins** (not the person being paid), so a few friends can't vote the pot to themselves.
 - **Pay any WhatsApp contact:** reply to a contact card with `/send 2k`, send Kolo the contact privately, or type `/send 08031234567 2k`. Someone not on Kolo gets a link to open a free wallet; the money comes off your balance, waits for them, and lands in their Kolo balance when they sign up. Unclaimed after 7 days, it goes back to you.
+- **Request money from anyone:** `/request @clinton 2k for jollof` (a tag, a Kolo ID, a phone number, or a reply to a contact card). Kolo messages them privately with a Roqqu pay link; people on Kolo can also pay from their Kolo balance with `/pay` or say no with `/decline`. Someone not on Kolo just pays with the link, no account needed. The money lands in your Kolo balance, and the group sees it was paid. Requests close after 7 days. You can also just say it: "Kolo, Ada owes me 3k for the cake".
 - **Course rep collections:** a group admin can end a collection with "to me" (`/dues 2k Handouts to me`), and the money goes straight to their own Kolo balance (their Kolo ID) so they can spend it without a vote. Everyone still sees who paid; non-admins can't do this.
 - `/join` sets up each member's own **passkey wallet** (fingerprint or face, no seed phrase) with a daily spending limit. Even Kolo can't move more than you allow, and `/cashout` sends your money there through Roqqu.
 - Every member gets a **Kolo ID**: their Roqqu username, like `@koda`. Anyone on Kolo can pay them with `/send @koda 2k`, even from another group, with no long wallet address.
@@ -24,7 +25,7 @@ Each member has two separate places for money:
 |---|---|---|
 | What it is | Money you've put into Kolo, recorded by Kolo and held by Roqqu | Your own account on the blockchain |
 | Who controls it | Kolo moves it when you ask in the chat | Only your fingerprint or face. Kolo can only pay group things up to your daily limit, enforced on-chain |
-| How money gets in | `/topup` (your Roqqu pay link), `/send` from another member, split pay-backs | `/cashout` from your Kolo balance |
+| How money gets in | `/topup` (your Roqqu pay link), `/send` from another member, paid requests, split pay-backs | `/cashout` from your Kolo balance |
 | What it's for | Dues, USSD payments, `/send` to members or Kolo IDs | Keeping your money, or sending it anywhere with your fingerprint (to a Kolo ID or any `0x` address) |
 | If you leave Kolo | Cash it out first | Still yours: Kolo's spend permission is revoked on-chain, and you log in with your passkey |
 

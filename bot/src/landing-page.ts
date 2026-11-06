@@ -252,8 +252,8 @@ ${LOGO_SPRITE}
     ${box('receipt', 'Split bills', '“Kolo split 9k between me, Ada and Tobi.” Everyone gets a link for their share.')}
     ${box('vote', 'Vote to spend', 'Money leaves the group pot only when the majority says yes, including a group admin, with a receipt for all.')}
     ${box('bell-ring', 'Remind and track', 'See who has paid, and nudge the rest without being the bad guy.')}
-    ${box('wallet', 'Your own wallet and Kolo ID', 'Top up, cash out, and send to anyone by their Kolo ID, like <code>/send @ada 2k</code>.')}
-    ${box('smartphone', 'A web menu', 'Prefer tapping to typing? <code>/app</code> sends you a private menu link.')}
+    ${box('wallet', 'Your own wallet and Kolo ID', 'Top up, cash out, and send to anyone by their Kolo ID, like <code>/send @ada 2k</code>. Prefer taps? <code>/app</code> opens a private menu.')}
+    ${box('hand-heart', 'Request money', 'Ask anyone to pay you: <code>/request @clinton 2k for jollof</code>. Works for any WhatsApp contact too, no Kolo account needed to pay.')}
   </div>
 </div></section>
 
@@ -281,7 +281,7 @@ ${LOGO_SPRITE}
     <div class="box">
       <span class="badge">${icon('banknote')}</span>
       <h3>Kolo balance</h3>
-      <p>Money you’ve put into Kolo, held by Roqqu. Fill it with <code>/topup</code>, or when someone sends you money or pays back a split.</p>
+      <p>Money you’ve put into Kolo, held by Roqqu. Fill it with <code>/topup</code>, or when someone sends you money, pays your request or pays back a split.</p>
       <ul><li>Pays your dues, even on USSD</li><li>Sends to members or Kolo IDs: <code>/send @ada 1k</code></li><li>Moves when you ask in the chat</li></ul>
     </div>
     <div class="move"><span>${icon('arrow-right')}</span><code>/cashout 5k</code></div>
@@ -318,6 +318,8 @@ ${LOGO_SPRITE}
     <tr><td><code>/split 9k me @Ada @Tobi</code></td><td>Share a bill; everyone pays their part.</td></tr>
     <tr><td><code>/spend 3k @Ada projector</code></td><td>The group votes; if yes wins, Kolo pays and posts a receipt.</td></tr>
     <tr><td><code>/send @ada 1k</code> · <code>/id</code></td><td>Send to anyone by their Kolo ID, and see yours.</td></tr>
+    <tr><td><code>/request @clinton 2k jollof</code></td><td>Ask someone to pay you. They get a private message with a pay link, or pay from their Kolo balance with <code>/pay</code>. They can also <code>/decline</code>.</td></tr>
+    <tr><td><code>/request 2k</code> on a contact card</td><td>Ask any WhatsApp contact for money, even if they’re not on Kolo. They pay with the link, no account or app needed.</td></tr>
     <tr><td><code>/send 2k</code> on a contact card</td><td>Pay any WhatsApp contact, even if they’re not on Kolo. They get a link to open a free wallet, and the money waits for them for 7 days.</td></tr>
     <tr><td><code>/topup 5k</code> · <code>/cashout 2k</code></td><td>Your own balance, answered privately.</td></tr>
     <tr><td><code>/app</code></td><td>A private web menu for everything above.</td></tr>

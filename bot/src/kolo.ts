@@ -65,6 +65,9 @@ export type WalletInfo = {
 
 // A spend from the pot waiting on the group's vote.
 type Spend = { amount: number; to: Member; purpose: string; by: Member }
+// "/request @clinton 2k for jollof": one person asking another for money. `to` may not be on
+// Kolo yet (a contact card or phone number); they can still pay with the Roqqu link.
+type MoneyRequest = { code: string; from: Member; to: Member; amount: number; note: string; chatId: string; at: number; reference?: string }
 
 type Collection = {
   title: string
@@ -92,10 +95,11 @@ const listNames = (people: Member[]) => {
 const tag = (m: Member) => `@${m.id.split('@')[0]}`
 // Starting balance before any top-up (0: money only comes in through a real top-up).
 const DEMO_CREDIT = Number(process.env.DEMO_CREDIT ?? 0)
-// kind: a top-up of the member's own balance, or their share of a split (paid back to payeeId).
+// kind: a top-up of the member's own balance, their share of a split (paid back to payeeId),
+// or a money request (code), paid to whoever asked.
 // Dues links carry amount + title so a payment that lands after the collection closed still counts.
 // organiserId: set on dues links for a "to me" collection, so even a late payment reaches them.
-type PayRef = { chatId: string; memberId: string; kind?: 'topup' | 'split'; amount?: number; title?: string; name?: string; payeeId?: string; payeeName?: string; organiserId?: string }
+type PayRef = { chatId: string; memberId: string; kind?: 'topup' | 'split' | 'request'; code?: string; amount?: number; title?: string; name?: string; payeeId?: string; payeeName?: string; organiserId?: string }
 const potLine = (pot: number) => `Group pot: ${naira(pot)}`
 const payLinkText =(m: Member, c: Collection, url: string) =>
   `Hi ${m.name}! Your share of *${c.title}* is ${naira(c.amount)}.\nPay here (USDT or BTC, via Roqqu): ${url}\nI'll tick you in the group as soon as it lands.`
@@ -148,6 +152,8 @@ export class Kolo {
   private claims = new Map<string, { amount: number; from: Member; chatId: string; at: number }[]>()
   // A contact card someone sent Kolo privately, so their next "/send 2k" pays that person.
   private sharedContacts = new Map<string, { contact: Contact; at: number }>()
+  // Open money requests by code ("R482"), until paid, declined or 7 days old.
+  private requests = new Map<string, MoneyRequest>()
   // /app links: private token → who may use the Kolo web menu, for which group, until when.
   private appTokens = new Map<string, { chatId: string; member: Member; expires: number }>()
   // Members who asked to delete their account: member id → when the request expires.
@@ -169,6 +175,7 @@ export class Kolo {
       owners: [...this.owners],
       koloIds: [...this.koloIds],
       claims: [...this.claims],
+      requests: [...this.requests],
       groupAccounts: [...this.groupAccounts],
       waiting: this.waiting,
       // Open votes, so a spend vote still counts after a restart.
@@ -188,6 +195,7 @@ export class Kolo {
     this.owners = new Map(s.owners ?? [])
     this.koloIds = new Map(s.koloIds ?? [])
     this.claims = new Map(s.claims ?? [])
+    this.requests = new Map(s.requests ?? [])
     this.groupAccounts = new Map(s.groupAccounts ?? [])
     this.waiting = s.waiting ?? []
     this.polls = new Map(s.polls ?? [])
@@ -322,7 +330,7 @@ export class Kolo {
   // "Kolo, pay Ada" by sharing her contact card privately: remember it for the next /send.
   rememberContact(sender: Member, chatId: string, contact: Contact): Action[] {
     this.sharedContacts.set(sender.id, { contact, at: Date.now() })
-    return [{ type: 'text' as const, chatId, text: `Got ${contact.name} (+${contact.phone}). How much should I send them from your Kolo balance? Reply like: /send 2k` }].map(sign)
+    return [{ type: 'text' as const, chatId, text: `Got ${contact.name} (+${contact.phone}). To send them money from your Kolo balance, reply like: /send 2k\nTo ask them for money, reply like: /request 2k for jollof` }].map(sign)
   }
 
   // Someone known to Kolo only by their phone (they got money and set up a wallet), so they
@@ -370,6 +378,11 @@ export class Kolo {
       }
       if (keep.length) this.claims.set(jid, keep)
       else this.claims.delete(jid)
+    }
+    for (const r of this.requests.values()) {
+      if (now - r.at < CLAIM_DAYS * 86_400_000) continue
+      this.dropRequest(r)
+      out.push({ type: 'dm', userId: r.from.id, text: `Your request to ${r.to.name} for ${naira(r.amount)}${r.note ? ` ${r.note}` : ''} wasn't paid in ${CLAIM_DAYS} days, so I've closed it. Send a new /request if you still need it.` })
     }
     return out.map(sign)
   }
@@ -499,6 +512,13 @@ export class Kolo {
       const balance = this.balanceOf(ref.memberId) + (ref.amount ?? 0)
       this.balances.set(ref.memberId, balance)
       return [{ type: 'dm' as const, userId: ref.memberId, text: `Top-up received: ${naira(ref.amount ?? 0)} is now in your Kolo balance. Balance: ${naira(balance)}.` }].map(sign)
+    }
+    if (ref?.kind === 'request') {
+      // A money request paid by pay link: it lands in the asker's Kolo balance.
+      this.references.delete(reference)
+      const r = this.requests.get(ref.code!)
+      if (!r) return []
+      return this.requestPaid(r, via).map(sign)
     }
     if (ref?.kind === 'split') {
       // A split share: the money goes to the person who paid the bill, as Kolo balance.
@@ -638,27 +658,16 @@ export class Kolo {
       case 'app':
       case 'web':
         return this.appLink(msg)
-      case 'send': {
-        // "/send @Excel 2k" (a WhatsApp tag) or "/send @koda 2k" (a Kolo ID, any group);
-        // the amount can come before or after. WhatsApp tags are @ and digits, IDs start with a letter.
-        // A tag that names someone already tagged is that person; else a Kolo ID; else a group member's name.
-        const amount = args.map(parseAmount).find((n) => n !== undefined)
-        const key = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
-        const tagged = new Set(msg.mentions.map((m) => key(m.name)))
-        const ids = args.filter((w) => /^@[a-z][a-z0-9._]{2,}$/i.test(w) && !tagged.has(key(w)))
-        const found = ids.map((w) => this.memberByKoloId(w) ?? msg.members.find((m) => key(m.name) === key(w)))
-        const missing = ids.filter((_, i) => !found[i])
-        if (missing.length) return [this.text(msg, `I don't know the Kolo ID ${missing.join(', ')}. Check the spelling, or ask them to send /id to see theirs.`)]
-        const people = [...msg.mentions, ...(found as Member[])]
-        // Nobody tagged: a contact card this replies to, a phone number, or a card sent privately.
-        if (!people.length) {
-          const phone = args.map(phoneArg).find(Boolean)
-          const shared = this.sharedContacts.get(msg.sender.id)
-          const contact = msg.contact ?? (phone ? { name: `+${phone}`, phone } : shared && Date.now() - shared.at < 30 * 60_000 ? shared.contact : undefined)
-          if (contact) return this.payContact(msg, args.filter((w) => !phoneArg(w)).map(parseAmount).find((n) => n !== undefined), contact)
-        }
-        return this.pay(msg, amount, people, [])
-      }
+      case 'send':
+        return this.sendCommand(msg, args)
+      case 'request':
+      case 'ask':
+        return this.request(msg, args)
+      case 'pay':
+        // "/pay" or "/pay R482" answers a money request; "/pay @excel 2k" is the same as /send.
+        return args.length && !args.every((w) => REQUEST_CODE.test(w)) ? this.sendCommand(msg, args) : this.payRequest(msg, args[0])
+      case 'decline':
+        return this.declineRequest(msg, args[0])
       case 'id':
       case 'username':
         return this.koloId(msg, args[0])
@@ -702,6 +711,10 @@ export class Kolo {
         return this.split(msg, intent.amount ?? undefined, people, intent.includeSender, intent.payee ? this.resolve(msg, [intent.payee])[0] ?? msg.members.find((m) => m.id === msg.sender.id) : undefined)
       case 'pay':
         return this.pay(msg, intent.amount ?? undefined, people, unknown)
+      case 'request':
+        if (unknown.length) return [this.askWho(msg, unknown)]
+        // The members the AI named count as tagged; its title is what the money is for.
+        return this.request({ ...msg, mentions: [...new Map([...msg.mentions, ...people].map((m) => [m.id, m])).values()] }, [String(intent.amount ?? ''), intent.title ?? ''].filter(Boolean))
       case 'poll':
         return this.startPoll(msg, intent.question ?? '')
       case 'spend':
@@ -1004,6 +1017,131 @@ export class Kolo {
   balanceOfLink = (reference: string) => {
     const ref = this.references.get(reference)
     return ref && ref.kind !== 'topup' ? this.balanceOf(ref.memberId) : undefined
+  }
+
+  // Who a /send or /request names: tagged people, Kolo IDs (any group), member names, or else a
+  // contact card it replies to, a phone number, or a card sent privately in the last 30 minutes.
+  // A tag that names someone already tagged is that person (WhatsApp tags are @ and digits).
+  private named(msg: Incoming, args: string[]): { people: Member[]; missing: string[]; contact?: Contact } {
+    const key = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+    const tagged = new Set(msg.mentions.map((m) => key(m.name)))
+    const ids = args.filter((w) => /^@[a-z][a-z0-9._]{2,}$/i.test(w) && !tagged.has(key(w)))
+    const found = ids.map((w) => this.memberByKoloId(w) ?? msg.members.find((m) => key(m.name) === key(w)))
+    const missing = ids.filter((_, i) => !found[i])
+    const people = [...msg.mentions, ...(found as Member[])]
+    if (people.length || missing.length) return { people, missing }
+    const phone = args.map(phoneArg).find(Boolean)
+    const shared = this.sharedContacts.get(msg.sender.id)
+    const contact = msg.contact ?? (phone ? { name: `+${phone}`, phone } : shared && Date.now() - shared.at < 30 * 60_000 ? shared.contact : undefined)
+    return { people, missing, contact }
+  }
+
+  // "/send @Excel 2k" or "/send @koda 2k"; the amount can come before or after.
+  private sendCommand(msg: Incoming, args: string[]): Action[] {
+    const amount = args.filter((w) => !phoneArg(w)).map(parseAmount).find((n) => n !== undefined)
+    const { people, missing, contact } = this.named(msg, args)
+    if (missing.length) return [this.text(msg, `I don't know the Kolo ID ${missing.join(', ')}. Check the spelling, or ask them to send /id to see theirs.`)]
+    if (contact) return this.payContact(msg, amount, contact)
+    return this.pay(msg, amount, people, [])
+  }
+
+  // ── Money requests: "/request @clinton 2k for jollof" ──
+
+  // Each person asked gets a DM with a Roqqu pay link (works without a Kolo account); people on
+  // Kolo can also pay from their Kolo balance with /pay. The money lands in the asker's balance.
+  private async request(msg: Incoming, args: string[]): Promise<Action[]> {
+    const amount = args.filter((w) => !phoneArg(w)).map(parseAmount).find((n) => n !== undefined)
+    const { people, missing, contact } = this.named(msg, args)
+    if (missing.length) return [this.text(msg, `I don't know the Kolo ID ${missing.join(', ')}. Check the spelling, or ask them to send /id to see theirs.`)]
+    const jid = contact && `${contact.phone}@s.whatsapp.net`
+    const knownId = contact && (contact.memberId ?? (this.owners.has(jid!) ? jid : undefined))
+    const asked = contact ? [{ id: knownId ?? jid!, name: contact.name }] : people
+    const who = asked.filter((m) => m.id !== msg.sender.id)
+    if (!who.length) return [this.text(msg, `Who should I ask for money? Tag them, use their Kolo ID, or reply to their contact card.\nSay it like: ${FEATURES.request.say}`)]
+    if (!amount) return [this.text(msg, `How much are you asking ${who.map((m) => m.name).join(' and ')} for?\nSay it like: ${FEATURES.request.say}`)]
+    // What it's for: everything that isn't a person, the amount or a number ("for jollof").
+    const rest = args.filter((w) => !w.startsWith('@') && !phoneArg(w) && parseAmount(w) === undefined).join(' ').trim()
+    const note = rest ? (/^for\b/i.test(rest) ? rest : `for ${rest}`) : ''
+    const chatId = msg.groupId ?? msg.chatId
+    const myId = this.koloIds.get(msg.sender.id)
+    const from = `${msg.sender.name}${myId ? ` (@${myId})` : ''}`
+    const ask = `${from} is asking you for ${naira(amount)}${note ? ` ${note}` : ''}.`
+    const dms = await Promise.all(
+      who.map(async (p): Promise<Action> => {
+        let code = ''
+        while (!code || this.requests.has(code)) code = `R${Math.floor(100 + Math.random() * 900)}`
+        const r: MoneyRequest = { code, from: msg.sender, to: p, amount, note, chatId, at: Date.now() }
+        this.requests.set(code, r)
+        let link = ''
+        if (this.payments) {
+          try {
+            const made = await this.payments.link({ chatId, member: p, amount, title: `Request from ${msg.sender.name}` })
+            r.reference = made.reference
+            this.references.set(made.reference, { chatId, memberId: p.id, kind: 'request', code, amount, name: p.name, payeeId: msg.sender.id, payeeName: msg.sender.name })
+            link = made.url
+          } catch (error) {
+            console.error('request link failed:', error)
+          }
+        }
+        // Someone not on Kolo can't message Kolo back, so they only get the pay link.
+        if (contact && !knownId) {
+          const how = link ? `Pay here, no account or app needed: ${link}` : `Pay ${msg.sender.name} directly.`
+          return { type: 'dm', userId: p.id, text: `Hi ${p.name}! ${ask}\nKolo is a finance assistant on WhatsApp. ${how}\nDon't know them? Just ignore this message.` }
+        }
+        const lines = [ask, `Pay from your Kolo balance: reply /pay ${code}`]
+        if (link) lines.push(`Or pay with Roqqu: ${link}`)
+        lines.push(`Don't want to? Reply /decline ${code}`)
+        return { type: 'dm', userId: p.id, text: lines.join('\n') }
+      }),
+    )
+    return [
+      this.text(msg, `Request sent. I've privately asked ${who.map((m) => m.name).join(' and ')} for ${naira(amount)}${note ? ` ${note}` : ''}${who.length > 1 ? ' each' : ''}. It lands in your Kolo balance, and I'll tell you the moment they pay.`),
+      ...dms,
+    ]
+  }
+
+  // The request this member is answering: the code they gave, or their only open one.
+  private requestFor(msg: Incoming, code: string | undefined, verb: string): MoneyRequest | Action[] {
+    const mine = [...this.requests.values()].filter((r) => r.to.id === msg.sender.id)
+    const r = code ? this.requests.get(code.toUpperCase()) : mine.length === 1 ? mine[0] : undefined
+    if (r && r.to.id === msg.sender.id) return r
+    if (code) return [this.text(msg, `I can't find a request ${code.toUpperCase()} for you. It may be paid, declined or older than ${CLAIM_DAYS} days.`)]
+    if (!mine.length) return [this.text(msg, `${msg.sender.name}, nobody is asking you for money right now. To send someone money, use ${FEATURES.pay.say}`)]
+    return [this.text(msg, `You have ${mine.length} requests. Which one?\n${mine.map((x) => `• ${x.code}: ${x.from.name}, ${naira(x.amount)}${x.note ? ` ${x.note}` : ''}. Reply /${verb} ${x.code}`).join('\n')}`)]
+  }
+
+  private payRequest(msg: Incoming, code?: string): Action[] {
+    const r = this.requestFor(msg, code, 'pay')
+    if (Array.isArray(r)) return r
+    const balance = this.balanceOf(msg.sender.id)
+    if (r.amount > balance) return [this.text(msg, `${msg.sender.name}, your Kolo balance is ${naira(balance)}, not enough to pay ${naira(r.amount)}. Add money with ${FEATURES.topup.say}, or use the Roqqu link in my message.`)]
+    this.balances.set(msg.sender.id, balance - r.amount)
+    return [this.text(msg, `Paid. ${naira(r.amount)} went to ${r.from.name}${r.note ? ` ${r.note}` : ''}.\nYour balance: ${naira(balance - r.amount)}`), ...this.requestPaid(r, 'their Kolo balance', msg.chatId)]
+  }
+
+  // Credit the asker and tell them, and the group it was asked in (unless it was paid there).
+  private requestPaid(r: MoneyRequest, via: string, paidIn?: string): Action[] {
+    this.dropRequest(r)
+    this.balances.set(r.from.id, this.balanceOf(r.from.id) + r.amount)
+    const what = `${naira(r.amount)}${r.note ? ` ${r.note}` : ''}`
+    const out: Action[] = [{ type: 'dm', userId: r.from.id, text: `${r.to.name} paid your request: ${what}, with ${via}. It's in your Kolo balance: ${naira(this.balanceOf(r.from.id))}.` }]
+    if (r.chatId.endsWith('@g.us') && r.chatId !== paidIn) out.push({ type: 'text', chatId: r.chatId, text: `${r.to.name} paid ${r.from.name} ${what} ✓` })
+    return out
+  }
+
+  private declineRequest(msg: Incoming, code?: string): Action[] {
+    const r = this.requestFor(msg, code, 'decline')
+    if (Array.isArray(r)) return r
+    this.dropRequest(r)
+    return [
+      this.text(msg, `Done. I've told ${r.from.name} you declined their request for ${naira(r.amount)}.`),
+      { type: 'dm', userId: r.from.id, text: `${r.to.name} declined your request for ${naira(r.amount)}${r.note ? ` ${r.note}` : ''}.` },
+    ]
+  }
+
+  private dropRequest(r: MoneyRequest) {
+    this.requests.delete(r.code)
+    if (r.reference) this.references.delete(r.reference)
   }
 
   // "Kolo send Excel 2k": move money from the sender's Kolo balance to another member's, instantly.
@@ -1312,7 +1450,9 @@ const offPoint = (name: string) => OFF_POINT[offPointTurn++ % OFF_POINT.length](
 const LABEL = '🐷 *Kolo*'
 
 // About one person, so answered in their DM (with a 👍 on the group message), never in the group.
-const PERSONAL = new Set(['balance', 'topup', 'cashout', 'limit', 'join', 'app', 'web', 'deleteaccount', 'send', 'id', 'username'])
+const PERSONAL = new Set(['balance', 'topup', 'cashout', 'limit', 'join', 'app', 'web', 'deleteaccount', 'send', 'id', 'username', 'pay', 'decline'])
+// A money request's code, as in /pay R482.
+const REQUEST_CODE = /^r\d{3}$/i
 // Days a payment to someone not on Kolo waits for them before going back to the sender.
 const CLAIM_DAYS = 7
 // A Nigerian phone number typed in a message (0803…, 234803…, +234 803…) as 234… digits.
@@ -1380,6 +1520,13 @@ export const FEATURES = {
     short: 'Send money from your Kolo balance to someone in the group, any Kolo ID, or any WhatsApp contact.',
     long: 'Moves money from your Kolo balance to theirs straight away, and DMs them. Tag someone in the group, or use their Kolo ID (like @koda) to pay anyone on Kolo, even in another group. To pay someone who isn\'t on Kolo yet, reply to their WhatsApp contact card with /send 2k, send me their contact privately, or type their number (/send 08031234567 2k). I message them a link to open a free wallet, and the money waits for them; if they don\'t claim it within 7 days, it comes back to you. Top up first with /topup if your balance is low.',
   },
+  request: {
+    icon: '🙏',
+    name: 'Request money',
+    say: '/request @[name or Kolo ID] [amount] [what for], or /request [phone number] [amount]',
+    short: 'Ask anyone for money: a group member, any Kolo ID, or any WhatsApp contact.',
+    long: 'Ask someone to pay you, like "/request @clinton 2k for jollof". I DM them privately with a Roqqu pay link, and if they are on Kolo they can also pay from their Kolo balance with /pay, or say no with /decline. To ask someone who isn\'t on Kolo, reply to their WhatsApp contact card with /request 2k, or type their number (/request 08031234567 2k); they pay with the link, no account needed. The money lands in your Kolo balance and I tell you the moment it does. Requests close after 7 days.',
+  },
   id: {
     icon: '🪪',
     name: 'Your Kolo ID',
@@ -1446,7 +1593,7 @@ export const FEATURES = {
 } as const
 export type Feature = keyof typeof FEATURES
 
-const HELP = `I'm Kolo, your finance assistant on WhatsApp. I handle money for you and your groups: dues, splits, paying anyone, and your own wallet.
+const HELP = `I'm Kolo, your finance assistant on WhatsApp. I handle money for you and your groups: dues, splits, paying or requesting money from anyone, and your own wallet.
 Talk to me normally, starting with "Kolo", or use a shortcut. [brackets] are what you fill in.
 Want me in another group? Save my number and add me like any other member.
 
@@ -1457,7 +1604,7 @@ ${Object.values(FEATURES)
 Want more on one? Type /help [feature], e.g. /help split`
 
 // "/help split", "/help bill", "/help vote" → the feature they mean
-const ALIASES: Record<string, Feature> = { username: 'id', tag: 'id', handle: 'id', web: 'app', website: 'app', menu: 'app', delete: 'deleteaccount', leave: 'deleteaccount', fund: 'topup', deposit: 'topup', balance: 'topup', withdrawal: 'cashout', cash: 'cashout', pot: 'spend', treasury: 'spend', withdraw: 'spend', bill: 'split', share: 'split', vote: 'poll', voting: 'poll', account: 'join', wallet: 'join', send: 'pay', collect: 'dues', collection: 'dues', reminder: 'remind', progress: 'status' }
+const ALIASES: Record<string, Feature> = { username: 'id', tag: 'id', handle: 'id', web: 'app', website: 'app', menu: 'app', delete: 'deleteaccount', leave: 'deleteaccount', fund: 'topup', deposit: 'topup', balance: 'topup', withdrawal: 'cashout', cash: 'cashout', pot: 'spend', treasury: 'spend', withdraw: 'spend', bill: 'split', share: 'split', vote: 'poll', voting: 'poll', account: 'join', wallet: 'join', send: 'pay', ask: 'request', owe: 'request', collect: 'dues', collection: 'dues', reminder: 'remind', progress: 'status' }
 function featureFor(word: string): Feature | undefined {
   const w = word.trim().toLowerCase().replace(/^\//, '').split(/\s+/)[0]
   if (!w) return undefined
