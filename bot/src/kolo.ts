@@ -765,11 +765,14 @@ export class Kolo {
   }
 
   private context(msg: Incoming): IntentContext {
+    // A collection everyone has paid is finished: the AI shouldn't keep bringing it up.
     const c = this.collections.get(msg.chatId)
+    const open = c && this.unpaid(c).length ? c : undefined
     return {
+      place: msg.isGroup ? 'group' : 'private',
       sender: msg.sender.name,
       members: [msg.sender.name, ...msg.members.filter((m) => m.id !== msg.sender.id).map((m) => m.name)],
-      collection: c && { title: c.title, amount: c.amount, unpaid: this.unpaid(c).map((m) => m.name) },
+      collection: open && { title: open.title, amount: open.amount, unpaid: this.unpaid(open).map((m) => m.name) },
       pot: this.pot(msg.chatId),
       replyingTo: msg.replyTo,
     }
@@ -869,6 +872,7 @@ export class Kolo {
     const collection = this.collections.get(msg.chatId)
     // Never go quiet when someone talks to Kolo.
     if (!collection) return [this.text(msg, `There's no collection running right now, ${msg.sender.name}. Start one with ${FEATURES.dues.say}`)]
+    if (!this.unpaid(collection).length) return [this.text(msg, `Everyone has paid *${collection.title}*, so it's done. Start a new one with ${FEATURES.dues.say}`)]
     if (collection.paid.has(msg.sender.id)) return [this.text(msg, `${msg.sender.name}, you've already paid for this one.`)]
     // With pay links, a message is never proof: Kolo waits for Roqqu's confirmation.
     const link = collection.links.get(msg.sender.id)
@@ -1451,9 +1455,9 @@ export class Kolo {
 const stripMention = (text: string) => text.replace(/^@?kolo\b[,:]?\s*/i, '').replace(/^@\S+\s*/, '').trim()
 
 const OFF_POINT = [
-  (name: string) => `${name}, I can only help with group money: dues, splits, votes and your Kolo wallet. Type / to see what I can do.`,
-  (name: string) => `Sorry ${name}, that's not something I can do. I handle group money, like collecting dues or splitting a bill. Type / for the menu.`,
-  (name: string) => `I didn't quite get that, ${name}. Try asking about dues, a split or a vote, or type / for the menu.`,
+  (name: string) => `${name}, I can only help with money: dues, splits, sending and requesting money, and your Kolo wallet. Type / to see what I can do.`,
+  (name: string) => `Sorry ${name}, that's not something I can do. I handle money, like sending it, asking for it, collecting dues or splitting a bill. Type / for the menu.`,
+  (name: string) => `I didn't quite get that, ${name}. Try asking about your balance, sending money, dues or a split, or type / for the menu.`,
 ]
 let offPointTurn = 0
 const offPoint = (name: string) => OFF_POINT[offPointTurn++ % OFF_POINT.length](name)

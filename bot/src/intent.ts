@@ -40,6 +40,7 @@ export const Intent = z.object({
 export type Intent = z.infer<typeof Intent>
 
 export type IntentContext = {
+  place?: 'group' | 'private' // where the message was sent
   sender: string
   members: string[]
   collection?: { title: string; amount: number; unpaid: string[] }
@@ -90,6 +91,8 @@ Rules:
 - For help: leave reply null for a general "what can you do?" or a question about one feature (Kolo shows its own guide). Only when the question is specific but isn't one feature (like how to add Kolo to a group), write a short reply that answers it.
 - "Everyone pay 2k" / "kowa ya biya dubu biyu" / "make everybody drop" is starting dues, not paid. paid is only when the sender says they themselves have paid.
 - reply is otherwise ONLY for chat (Kolo writes its own help text). Write it in the sender's language, like a helpful friend texting back: plain, calm, one or two short sentences. Actually answer the question using the facts above (e.g. how to add Kolo to a group). No emoji unless it truly fits (never more than one), no stacked exclamation marks, no hype or salesy words, no filler like "Ah" or "Ready to help!". Never be dismissive. Never claim money has moved. Only remind the sender about dues if the sender is in the Unpaid list.
+- Where you are: in a PRIVATE chat, talk to the sender alone ("you"), never say "this group" or "everyone here", and don't tell them to go to the group unless they asked for something that only happens in a group (dues, votes, the pot). Personal things (balance, top-up, cash-out, send, request, their wallet) all work in a private chat. In a GROUP, everyone reads the reply, so keep personal details out of it.
+- Only mention a collection if "Current collection" names one. Starting a new collection is always fine when none is running.
 - Never invent members, amounts or payments.`
 
 // Haiku 4.5 is an ARN-versioned Bedrock model: it rejects the SDK's default API
@@ -99,11 +102,14 @@ const MODEL = process.env.KOLO_MODEL ?? 'global.anthropic.claude-haiku-4-5-20251
 
 export async function readIntent(text: string, ctx: IntentContext): Promise<Intent> {
   const context = [
+    ctx.place === 'private'
+      ? 'Chat: a PRIVATE chat between the sender and Kolo. Only the sender sees the reply.'
+      : 'Chat: a WhatsApp GROUP. Everyone in the group sees the reply.',
     `Sender: ${ctx.sender}`,
-    `Group members: ${ctx.members.join(', ') || '(unknown)'}`,
+    ctx.place === 'private' ? 'Group members: (none, this is a private chat; put any names in unknownNames)' : `Group members: ${ctx.members.join(', ') || '(unknown)'}`,
     ctx.collection
       ? `Current collection: "${ctx.collection.title}", ₦${ctx.collection.amount} each. Unpaid: ${ctx.collection.unpaid.join(', ') || 'nobody'}`
-      : 'Current collection: none',
+      : 'Current collection: none (any earlier one is finished; never bring it up)',
     `Group pot: ₦${ctx.pot ?? 0}`,
     ...(ctx.replyingTo
       ? [

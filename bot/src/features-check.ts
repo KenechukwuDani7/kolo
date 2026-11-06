@@ -262,6 +262,17 @@ expect(words(out).includes('asking you for ₦2,000.') && out.some((a) => a.type
 out = await chat.handle(say(ike, 'Kolo send 1k to 08103211842'))
 expect(words(out).includes('waiting for'), '"Kolo send 1k to 0810…" pays a number outside the group', words(out))
 
+// A collection everyone has paid is finished: "paid" says so, and a new one can start.
+const finished = new Kolo(undefined, payments)
+await finished.handle({ ...say(ike, '/dues 1k Birthday'), members: [ike, excel] })
+const bdayRefs = [...(finished as any).references].filter(([, r]: any) => r.title === 'Birthday').map(([k]: any) => k)
+for (const r of bdayRefs) finished.confirmPayment(r)
+out = await finished.handle({ ...say(excel, 'paid'), members: [ike, excel] })
+expect(words(out).includes("so it's done"), '"paid" after everyone paid says the collection is finished', words(out))
+expect(!(finished as any).context({ ...say(excel, 'hi'), members: [ike, excel] }).collection, 'a finished collection is not passed to the AI')
+out = await finished.handle({ ...say(ike, '/dues 3k Shawarma'), members: [ike, excel] })
+expect(words(out).includes('Shawarma'), 'a new collection starts after the last one is finished', words(out))
+
 // A wallet made before the wallet service kept records: /join sets up a new one, keeping balance and ID.
 const oldWallets = new Kolo(undefined, payments, {
   usage: async () => { throw new Error('no Kolo wallet with that address') },
