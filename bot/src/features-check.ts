@@ -248,6 +248,17 @@ chat = casual(reads('request', 3000, ['Tunde']))
 out = await chat.handle(say(ike, 'Kolo Tunde owes me 3k'))
 expect(words(out).includes('Tunde') && !words(out).includes('Request sent'), 'an unknown name still gets asked who they mean', words(out))
 
+chat = casual(reads('request', 3000, ['@47347769864262']))
+out = await chat.handle(say(ike, 'Kolo help me collect 3k from @47347769864262', [clinton]))
+expect(words(out).includes('Request sent') && out.some((a) => a.type === 'dm' && a.userId === clinton.id), 'a tag the AI calls unknown digits is still the tagged person', words(out))
+chat = casual(async () => { throw new Error('the AI should not be asked') })
+;(chat as any).owners.set('kodaout@s', { name: 'Tobi', chatId: 'other@g.us' })
+;(chat as any).koloIds.set('kodaout@s', 'tobi')
+out = await chat.handle(say(ike, 'Kolo request 2k from @tobi'))
+expect(words(out).includes('asking you for ₦2,000.') && out.some((a) => a.type === 'dm' && a.userId === 'kodaout@s'), '"Kolo request 2k from @tobi" asks a Kolo ID in another group, without the AI', words(out))
+out = await chat.handle(say(ike, 'Kolo send 1k to 08103211842'))
+expect(words(out).includes('waiting for'), '"Kolo send 1k to 0810…" pays a number outside the group', words(out))
+
 // A wallet made before the wallet service kept records: /join sets up a new one, keeping balance and ID.
 const oldWallets = new Kolo(undefined, payments, {
   usage: async () => { throw new Error('no Kolo wallet with that address') },

@@ -623,6 +623,8 @@ export class Kolo {
     const body = stripMention(text)
     if (!body) return [this.text(msg, HELP)]
     if (!this.read) return route(verbOf(body), () => this.command(msg, body))
+    // "Kolo request 2k from @koda", "Kolo send 3k to 0803…": already in command form, no AI needed.
+    if (/^(send|request)\s/i.test(body) && body.split(/\s+/).some((w) => parseAmount(w) !== undefined)) return route(verbOf(body), () => this.command(msg, body))
     try {
       const intent = await this.read(body, this.context(msg))
       heard.language = intent.language
@@ -718,7 +720,8 @@ export class Kolo {
         const byId = unknown.map((n) => this.memberByKoloId(n)).filter((m): m is Member => !!m)
         const all = [...new Map([...people, ...byId, ...extra.people].map((m) => [m.id, m])).values()]
         const key = (n: string) => n.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
-        const left = unknown.filter((n) => !phoneArg(n) && !this.memberByKoloId(n) && !all.some((m) => key(m.name) === key(n)))
+        // Tags arrive as digits ("@4734…"): those people are already in the mentions.
+        const left = unknown.filter((n) => !phoneArg(n) && !/^@?\d{6,}$/.test(n.trim()) && !this.memberByKoloId(n) && !all.some((m) => key(m.name) === key(n)))
         if (left.length) return [this.askWho(msg, left)]
         if (intent.action === 'pay') return !all.length && extra.contact ? this.payContact(msg, intent.amount ?? undefined, extra.contact) : this.pay(msg, intent.amount ?? undefined, all, [])
         // The people found count as tagged; the AI's title is what the money is for.
@@ -1069,7 +1072,7 @@ export class Kolo {
     if (!who.length) return [this.text(msg, `Who should I ask for money? Tag them, use their Kolo ID, or reply to their contact card.\nSay it like: ${FEATURES.request.say}`)]
     if (!amount) return [this.text(msg, `How much are you asking ${who.map((m) => m.name).join(' and ')} for?\nSay it like: ${FEATURES.request.say}`)]
     // What it's for: everything that isn't a person, the amount or a number ("for jollof").
-    const rest = args.filter((w) => !w.startsWith('@') && !phoneArg(w) && parseAmount(w) === undefined).join(' ').trim()
+    const rest = args.filter((w) => !w.startsWith('@') && !phoneArg(w) && parseAmount(w) === undefined && !/^(from|to)$/i.test(w)).join(' ').trim()
     const note = rest ? (/^for\b/i.test(rest) ? rest : `for ${rest}`) : ''
     const chatId = msg.groupId ?? msg.chatId
     const myId = this.koloIds.get(msg.sender.id)
